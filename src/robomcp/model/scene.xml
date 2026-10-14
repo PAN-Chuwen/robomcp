@@ -1,0 +1,56 @@
+<mujoco model="robomcp tabletop">
+  <include file="so101.xml"/>
+
+  <statistic center="0.2 0 0.1" extent="0.5"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.35 0.35 0.35" specular="0 0 0"/>
+    <global azimuth="200" elevation="-35" offwidth="1280" offheight="960"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.85 0.87 0.9" rgb2="0.55 0.58 0.62" width="512" height="3072"/>
+    <texture type="2d" name="table" builtin="checker" mark="edge" rgb1="0.82 0.78 0.72" rgb2="0.78 0.74 0.68"
+      markrgb="0.7 0.66 0.6" width="300" height="300"/>
+    <material name="table" texture="table" texuniform="true" texrepeat="8 8" reflectance="0.05"/>
+  </asset>
+
+  <default>
+    <default class="cube">
+      <geom type="box" size="0.012 0.012 0.012" condim="4" friction="1.2 0.02 0.002" mass="0.02"
+        solref="0.005 1" contype="2" conaffinity="1"/>
+    </default>
+    <default class="tray">
+      <geom type="box" contype="2" conaffinity="1" rgba="0.35 0.35 0.38 1"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light pos="0.2 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="table" size="0 0 0.05" type="plane" material="table"/>
+
+    <camera name="top" pos="0.22 0 0.75" xyaxes="0 -1 0 1 0 0"/>
+
+    <body name="red_cube" pos="0.20 0.08 0.012">
+      <freejoint/>
+      <geom class="cube" name="red_cube" rgba="0.85 0.15 0.15 1"/>
+    </body>
+    <body name="green_cube" pos="0.24 -0.02 0.012">
+      <freejoint/>
+      <geom class="cube" name="green_cube" rgba="0.15 0.7 0.25 1"/>
+    </body>
+    <body name="blue_cube" pos="0.18 -0.09 0.012">
+      <freejoint/>
+      <geom class="cube" name="blue_cube" rgba="0.15 0.3 0.85 1"/>
+    </body>
+
+    <!-- shallow tray: 8 x 8 cm floor with 1.5 cm walls -->
+    <body name="tray" pos="0.12 0.20 0">
+      <geom class="tray" name="tray_floor" size="0.04 0.04 0.002" pos="0 0 0.002"/>
+      <geom class="tray" size="0.04 0.002 0.0075" pos="0 0.038 0.0095"/>
+      <geom class="tray" size="0.04 0.002 0.0075" pos="0 -0.038 0.0095"/>
+      <geom class="tray" size="0.002 0.04 0.0075" pos="0.038 0 0.0095"/>
+      <geom class="tray" size="0.002 0.04 0.0075" pos="-0.038 0 0.0095"/>
+    </body>
+  </worldbody>
+</mujoco>
