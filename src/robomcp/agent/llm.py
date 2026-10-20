@@ -74,7 +74,7 @@ class LLM:
         if not key:
             raise SystemExit(f"no API key for {self.provider} (set it in {PROJECT_ROOT / '.env'} or the Keychain)")
         self.model = self.model or os.environ.get("LLM_MODEL", default_model)
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.client = OpenAI(api_key=key, base_url=base_url, max_retries=5)
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None):
         kwargs = {"model": self.model, "messages": messages, "temperature": 0}

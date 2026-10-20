@@ -16,26 +16,37 @@ from robomcp.agent.harness import PROJECT_ROOT, Harness
 from robomcp.agent.tasks import TASKS
 
 
-async def _eval(modes: list[str], seeds: list[int], keys: list[str] | None, slip: float) -> list[dict]:
+async def _eval(modes: list[str], seeds: list[int], keys: list[str] | None, slip: float, out) -> list[dict]:
     rows = []
     tasks = [t for t in TASKS if not keys or t.key in keys]
     for mode in modes:
         harness = Harness(mode=mode, verbose=False, slip=slip)
         for task in tasks:
             for seed in seeds:
-                res = await harness.run(task.goal, seed=seed)
-                ok = task.check(res.scene_before, res.scene_after)
-                u = harness.llm.usage
-                rows.append({"mode": mode, "task": task.key, "kind": task.kind, "seed": seed, "success": ok,
-                             "tool_calls": res.tool_calls, "model_calls": u.calls, "prompt_tokens": u.prompt,
-                             "cache_hit": u.cache_hit, "seconds": res.seconds, "trace": res.trace_path})
-                print(f"{mode:<7}{task.key:<16}seed={seed}  {'✓' if ok else '✗'}  tools={res.tool_calls:<3}"
-                      f"calls={u.calls:<3}{res.seconds:>6.1f}s", flush=True)
+                row = {"mode": mode, "task": task.key, "kind": task.kind, "seed": seed, "slip": slip}
+                try:
+                    res = await harness.run(task.goal, seed=seed)
+                    u = harness.llm.usage
+                    row.update(success=task.check(res.scene_before, res.scene_after), error=None,
+                               tool_calls=res.tool_calls, model_calls=u.calls, prompt_tokens=u.prompt,
+                               cache_hit=u.cache_hit, seconds=res.seconds, trace=res.trace_path)
+                except Exception as e:  # network hiccups etc.: record and keep going
+                    row.update(success=False, error=f"{type(e).__name__}: {e}"[:200], tool_calls=0, model_calls=0,
+                               prompt_tokens=0, cache_hit=0, seconds=0.0, trace="")
+                rows.append(row)
+                out.write_text(json.dumps(rows, ensure_ascii=False, indent=1))  # save as we go
+                mark = "!" if row["error"] else ("✓" if row["success"] else "✗")
+                print(f"{mode:<7}{task.key:<16}seed={seed}  {mark}  tools={row['tool_calls']:<3}"
+                      f"calls={row['model_calls']:<3}{row['seconds']:>6.1f}s", flush=True)
     return rows
 
 
 def _summary(rows: list[dict]) -> None:
     print(f"\n{'mode':<8}{'success':>10}{'tool calls':>12}{'model calls':>13}{'tokens':>10}{'cache hit':>11}{'sec':>7}")
+    errors = [r for r in rows if r.get("error")]
+    if errors:
+        print(f"\n{len(errors)} runs failed with errors and are excluded from the averages below")
+    rows = [r for r in rows if not r.get("error")]
     for mode in dict.fromkeys(r["mode"] for r in rows):
         rs = [r for r in rows if r["mode"] == mode]
         n = len(rs)
@@ -71,11 +82,11 @@ def main() -> None:
         res = asyncio.run(Harness(mode=args.mode, slip=args.slip).run(args.goal, seed=args.seed, record=args.record))
         print(f"\n结果：{res.final_text}\n轨迹：{res.trace_path}")
     elif args.cmd == "eval":
+        out = PROJECT_ROOT / "out" / f"eval-{time.strftime('%Y%m%d-%H%M%S')}-slip{args.slip}.json"
+        out.parent.mkdir(exist_ok=True)
         rows = asyncio.run(_eval(args.modes.split(","), [int(s) for s in args.seeds.split(",")],
-                                 args.tasks.split(",") if args.tasks else None, args.slip))
+                                 args.tasks.split(",") if args.tasks else None, args.slip, out))
         _summary(rows)
-        out = PROJECT_ROOT / "out" / f"eval-{time.strftime('%Y%m%d-%H%M%S')}.json"
-        out.write_text(json.dumps(rows, ensure_ascii=False, indent=1))
         print(f"\nresults: {out}")
     else:
         from robomcp.agent.console import serve
