@@ -42,10 +42,11 @@ VERIFIER_PROMPT = """你是校验者。根据任务目标和执行后的场景�
 LIVE_DIR = PROJECT_ROOT / "out" / "live"
 
 
-def _server_params(live: bool) -> StdioServerParameters:
+def _server_params(live: bool, slip: float = 0.0) -> StdioServerParameters:
     env = dict(os.environ)
     if live:
         env["ROBOMCP_LIVE_DIR"] = str(LIVE_DIR)
+    env["ROBOMCP_SLIP"] = str(slip)
     return StdioServerParameters(command=sys.executable, args=["-m", "robomcp.server"], env=env)
 
 
@@ -77,10 +78,11 @@ class RunResult:
 
 class Harness:
     def __init__(self, mode: str = "plan", max_turns: int = 20, max_verify: int = 2, verbose: bool = True,
-                 on_event=None, live: bool = False):
+                 on_event=None, live: bool = False, slip: float = 0.0):
         assert mode in ("bare", "verify", "plan"), mode
         self.mode, self.max_turns, self.max_verify, self.verbose = mode, max_turns, max_verify, verbose
         self.on_event, self.live = on_event, live  # on_event(dict) feeds the web console
+        self.slip = slip  # probability of a silent placement failure injected by the simulator
         self.llm = LLM()
 
     # ------------------------------------------------------------------ utils
@@ -146,8 +148,8 @@ class Harness:
         res = RunResult(goal=goal, mode=self.mode)
         self.llm.usage = Usage()
         t0 = time.time()
-        self._log(res, "start", goal=goal, mode=self.mode, seed=seed)
-        async with Client(_server_params(self.live)) as robot:
+        self._log(res, "start", goal=goal, mode=self.mode, seed=seed, slip=self.slip)
+        async with Client(_server_params(self.live, self.slip)) as robot:
             tools = mcp_to_openai_tools((await robot.list_tools()).tools, HIDDEN_TOOLS)
             await robot.call_tool("reset_scene", {"seed": seed} if seed is not None else {})
             if record:

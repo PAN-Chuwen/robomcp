@@ -16,11 +16,11 @@ from robomcp.agent.harness import PROJECT_ROOT, Harness
 from robomcp.agent.tasks import TASKS
 
 
-async def _eval(modes: list[str], seeds: list[int], keys: list[str] | None) -> list[dict]:
+async def _eval(modes: list[str], seeds: list[int], keys: list[str] | None, slip: float) -> list[dict]:
     rows = []
     tasks = [t for t in TASKS if not keys or t.key in keys]
     for mode in modes:
-        harness = Harness(mode=mode, verbose=False)
+        harness = Harness(mode=mode, verbose=False, slip=slip)
         for task in tasks:
             for seed in seeds:
                 res = await harness.run(task.goal, seed=seed)
@@ -57,20 +57,22 @@ def main() -> None:
     r.add_argument("--mode", default="plan", choices=["bare", "verify", "plan"])
     r.add_argument("--seed", type=int)
     r.add_argument("--record", help="save a GIF under out/")
+    r.add_argument("--slip", type=float, default=0.0, help="probability of a silent placement failure")
     e = sub.add_parser("eval", help="run the task set under several harness modes")
     e.add_argument("--modes", default="bare,verify,plan")
     e.add_argument("--seeds", default="0,1,2")
     e.add_argument("--tasks", help="comma-separated task keys (default: all)")
+    e.add_argument("--slip", type=float, default=0.0, help="probability of a silent placement failure")
     c = sub.add_parser("console", help="web console with live view")
     c.add_argument("--port", type=int, default=8765)
     args = ap.parse_args()
 
     if args.cmd == "run":
-        res = asyncio.run(Harness(mode=args.mode).run(args.goal, seed=args.seed, record=args.record))
+        res = asyncio.run(Harness(mode=args.mode, slip=args.slip).run(args.goal, seed=args.seed, record=args.record))
         print(f"\n结果：{res.final_text}\n轨迹：{res.trace_path}")
     elif args.cmd == "eval":
         rows = asyncio.run(_eval(args.modes.split(","), [int(s) for s in args.seeds.split(",")],
-                                 args.tasks.split(",") if args.tasks else None))
+                                 args.tasks.split(",") if args.tasks else None, args.slip))
         _summary(rows)
         out = PROJECT_ROOT / "out" / f"eval-{time.strftime('%Y%m%d-%H%M%S')}.json"
         out.write_text(json.dumps(rows, ensure_ascii=False, indent=1))
