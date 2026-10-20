@@ -35,7 +35,9 @@ PLANNER_PROMPT = """你是机械臂任务的规划者。根据任务和当前场
 只输出 JSON：{"feasible": true/false, "reason": "一句话", "steps": ["步骤1", "步骤2", ...]}
 步骤用可执行的技能描述，比如 "pick red_cube"、"place_in_tray"。物体不存在时 feasible=false。"""
 
-VERIFIER_PROMPT = """你是校验者。根据任务目标和执行后的场景状态，判断任务是否真正完成。
+VERIFIER_PROMPT = """你是校验者。对比执行前和执行后的场景，判断任务是否真正完成。
+任务里提到的"最远"、"不要动"等都以执行前的场景为准。
+如果任务要求的物体在执行前的场景里根本不存在，执行者拒绝执行且没有移动任何物体，就算通过。
 只看场景数据，不要相信执行者自己的说法。只输出 JSON：{"passed": true/false, "reason": "一句话"}"""
 
 
@@ -122,10 +124,10 @@ class Harness:
         ])
         return _json(msg.content or "") or {"feasible": True, "reason": "planner output unparsable", "steps": []}
 
-    def _verify(self, goal: str, scene: str, claim: str) -> dict:
+    def _verify(self, goal: str, before: str, after: str, claim: str) -> dict:
         msg = self.llm.chat([
             {"role": "system", "content": VERIFIER_PROMPT},
-            {"role": "user", "content": f"任务：{goal}\n执行者的说法：{claim}\n执行后的场景：{scene}"},
+            {"role": "user", "content": f"任务：{goal}\n执行者的说法：{claim}\n执行前的场景：{before}\n执行后的场景：{after}"},
         ])
         return _json(msg.content or "") or {"passed": False, "reason": "verifier output unparsable"}
 
@@ -184,8 +186,8 @@ class Harness:
 
         if self.mode in ("verify", "plan"):
             for _ in range(self.max_verify):
-                scene = _text(await robot.call_tool("get_scene", {}))
-                verdict = self._verify(goal, scene, res.final_text)
+                after = _text(await robot.call_tool("get_scene", {}))
+                verdict = self._verify(goal, scene, after, res.final_text)
                 res.verifier_rounds += 1
                 self._log(res, "verify", verdict=verdict)
                 if verdict.get("passed"):
