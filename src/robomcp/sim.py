@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +49,10 @@ class TabletopSim:
         ]
         self.record = record
         self.frames: list[np.ndarray] = []
+        # Live view: when ROBOMCP_LIVE_DIR is set, the latest frame is written there as frame.jpg for the web console.
+        live = os.environ.get("ROBOMCP_LIVE_DIR")
+        self._live_dir = Path(live) if live else None
+        self._last_live = 0.0
         self._renderer = mujoco.Renderer(self.model, height=render_size[1], width=render_size[0])
         self._cam = mujoco.MjvCamera()
         self._cam.lookat[:] = [0.18, 0.05, 0.04]
@@ -134,8 +140,20 @@ class TabletopSim:
     def _settle(self, steps: int) -> None:
         for i in range(steps):
             mujoco.mj_step(self.model, self.data)
-            if self.record and i % 8 == 0:
-                self.frames.append(self.render())
+            self._on_step(i)
+
+    def _on_step(self, i: int) -> None:
+        if self.record and i % 8 == 0:
+            self.frames.append(self.render())
+        if self._live_dir and time.monotonic() - self._last_live > 0.06:
+            self.write_live_frame()
+
+    def write_live_frame(self) -> None:
+        self._last_live = time.monotonic()
+        self._live_dir.mkdir(parents=True, exist_ok=True)
+        tmp = self._live_dir / "frame.tmp.jpg"
+        Image.fromarray(self.render()).save(tmp, quality=80)
+        tmp.replace(self._live_dir / "frame.jpg")  # atomic swap so the browser never sees a half-written file
 
     def _move_joints(self, q_target: np.ndarray, duration: float = 1.0) -> None:
         q_start = self.data.ctrl[:5].copy()
@@ -145,8 +163,7 @@ class TabletopSim:
             s = s * s * (3 - 2 * s)  # smoothstep
             self.data.ctrl[:5] = q_start + s * (q_target - q_start)
             mujoco.mj_step(self.model, self.data)
-            if self.record and i % 8 == 0:
-                self.frames.append(self.render())
+            self._on_step(i)
         self._settle(60)
 
     def move_to(self, x: float, y: float, z: float, duration: float = 1.0) -> None:
