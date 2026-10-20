@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -26,17 +27,17 @@ class State:
         with self.lock:
             self.events.append(event)
 
-    def start(self, goal: str, mode: str, seed: int | None) -> bool:
+    def start(self, goal: str, mode: str, seed: int | None, slip: float = 0.0) -> bool:
         with self.lock:
             if self.running:
                 return False
             self.running, self.events = True, []
-        threading.Thread(target=self._run, args=(goal, mode, seed), daemon=True).start()
+        threading.Thread(target=self._run, args=(goal, mode, seed, slip), daemon=True).start()
         return True
 
-    def _run(self, goal: str, mode: str, seed: int | None) -> None:
+    def _run(self, goal: str, mode: str, seed: int | None, slip: float) -> None:
         try:
-            harness = Harness(mode=mode, on_event=self.push, live=True)
+            harness = Harness(mode=mode, on_event=self.push, live=True, slip=slip)
             asyncio.run(harness.run(goal, seed=seed))
         except Exception as e:  # surface failures in the page instead of a silent stop
             self.push({"kind": "error", "message": f"{type(e).__name__}: {e}"})
@@ -65,6 +66,8 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith("/frame.jpg"):
             frame = LIVE_DIR / "frame.jpg"
             self._send(200, frame.read_bytes(), "image/jpeg") if frame.exists() else self._send(404, b"", "text/plain")
+        elif self.path.startswith("/stream.mjpg"):
+            self._stream()
         elif self.path.startswith("/events"):
             since = int(self.path.split("since=")[-1]) if "since=" in self.path else 0
             with STATE.lock:
@@ -73,13 +76,32 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, b"not found", "text/plain")
 
+    def _stream(self) -> None:
+        """MJPEG: push each new frame as soon as the simulator writes it (about 25 fps while moving)."""
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        frame, last = LIVE_DIR / "frame.jpg", 0.0
+        try:
+            while True:
+                mtime = frame.stat().st_mtime if frame.exists() else 0.0
+                if mtime != last:
+                    last, data = mtime, frame.read_bytes()
+                    self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                                     + str(len(data)).encode() + b"\r\n\r\n" + data + b"\r\n")
+                    self.wfile.flush()
+                time.sleep(0.02)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # browser closed the tab
+
     def do_POST(self) -> None:
         if self.path != "/run":
             return self._send(404, b"not found", "text/plain")
         req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         seed = req.get("seed")
         ok = STATE.start(req.get("goal", "").strip() or "把红色方块放进托盘", req.get("mode", "plan"),
-                         int(seed) if seed not in (None, "") else None)
+                         int(seed) if seed not in (None, "") else None, float(req.get("slip") or 0))
         self._send(200 if ok else 409, json.dumps({"started": ok}).encode(), "application/json")
 
 
