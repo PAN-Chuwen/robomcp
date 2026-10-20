@@ -91,8 +91,12 @@ class TabletopSim:
 
     def scene(self) -> dict:
         tray = self.data.xpos[self.model.body(TRAY_NAME).id]
+        objects = [vars(self.object_state(n)) for n in self.objects]
+        # Derived relation computed in code: models misjudge distances when comparing raw coordinates.
+        for o in objects:
+            o["distance_to_tray_m"] = round(float(np.hypot(o["position"][0] - tray[0], o["position"][1] - tray[1])), 3)
         return {
-            "objects": [vars(self.object_state(n)) for n in self.objects],
+            "objects": objects,
             "tray": {"position": tuple(round(float(v), 4) for v in tray), "size_m": 0.08},
             "gripper": {
                 "position": tuple(round(float(v), 4) for v in self.tip_position()),

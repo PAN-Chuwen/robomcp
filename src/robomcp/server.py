@@ -40,7 +40,7 @@ def _run(fn, *args) -> dict:
 
 @server.tool()
 async def get_scene() -> dict:
-    """Object positions, whether each object is in the tray, tray position, and gripper state."""
+    """Object positions, whether each object is in the tray, its horizontal distance to the tray, tray position, and gripper state."""
     return sim.scene()
 
 
