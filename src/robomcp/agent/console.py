@@ -37,7 +37,8 @@ class State:
 
     def _run(self, goal: str, mode: str, seed: int | None, slip: float) -> None:
         try:
-            harness = Harness(mode=mode, on_event=self.push, live=True, slip=slip)
+            # The console demo uses the delayed failure: the tool result looks fine, only a fresh look reveals it.
+            harness = Harness(mode=mode, on_event=self.push, live=True, slip=slip, slip_mode="delayed")
             asyncio.run(harness.run(goal, seed=seed))
         except Exception as e:  # surface failures in the page instead of a silent stop
             self.push({"kind": "error", "message": f"{type(e).__name__}: {e}"})

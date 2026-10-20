@@ -58,6 +58,10 @@ class TabletopSim:
         # Failure injection: probability that a placed object bounces out of the tray while the skill still
         # reports success (a silent failure, like an unreliable success signal on a real robot).
         self.slip = float(os.environ.get("ROBOMCP_SLIP", "0") or 0)
+        # "immediate": the object is already out when the skill returns, so the returned scene shows it.
+        # "delayed": it rolls off after the skill has returned, so the returned scene is stale.
+        self.slip_mode = os.environ.get("ROBOMCP_SLIP_MODE", "immediate")
+        self._pending_bounce: str | None = None
         self._rng = random.Random(0)
         self._renderer = mujoco.Renderer(self.model, height=render_size[1], width=render_size[0])
         self._cam = mujoco.MjvCamera()
@@ -69,6 +73,7 @@ class TabletopSim:
 
     def reset(self, layout: dict[str, tuple[float, float]] | None = None, seed: int | None = None) -> None:
         self._rng = random.Random(seed)
+        self._pending_bounce = None
         mujoco.mj_resetData(self.model, self.data)
         self.data.qpos[self._arm_qadr] = HOME_Q
         self.data.qpos[self._grip_qadr] = GRIPPER_OPEN
@@ -225,7 +230,16 @@ class TabletopSim:
         if held is None:
             raise SkillError("place executed with an empty gripper")
         if self.slip and self._rng.random() < self.slip:
-            self._bounce_out(held)
+            if self.slip_mode == "delayed":
+                self._pending_bounce = held
+            else:
+                self._bounce_out(held)
+
+    def settle_pending(self) -> None:
+        """Apply a delayed silent failure before the next observation or action."""
+        if self._pending_bounce:
+            name, self._pending_bounce = self._pending_bounce, None
+            self._bounce_out(name)
 
     def _bounce_out(self, name: str) -> None:
         """Silent failure: move the just-placed object off the tray; the caller is not told."""
