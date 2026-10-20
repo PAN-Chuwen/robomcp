@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +54,11 @@ class TabletopSim:
         live = os.environ.get("ROBOMCP_LIVE_DIR")
         self._live_dir = Path(live) if live else None
         self._last_live = 0.0
+        self._pace_wall = self._pace_sim = 0.0  # anchors for real-time playback in live mode
+        # Failure injection: probability that a placed object bounces out of the tray while the skill still
+        # reports success (a silent failure, like an unreliable success signal on a real robot).
+        self.slip = float(os.environ.get("ROBOMCP_SLIP", "0") or 0)
+        self._rng = random.Random(0)
         self._renderer = mujoco.Renderer(self.model, height=render_size[1], width=render_size[0])
         self._cam = mujoco.MjvCamera()
         self._cam.lookat[:] = [0.18, 0.05, 0.04]
@@ -61,7 +67,8 @@ class TabletopSim:
 
     # ------------------------------------------------------------------ state
 
-    def reset(self, layout: dict[str, tuple[float, float]] | None = None) -> None:
+    def reset(self, layout: dict[str, tuple[float, float]] | None = None, seed: int | None = None) -> None:
+        self._rng = random.Random(seed)
         mujoco.mj_resetData(self.model, self.data)
         self.data.qpos[self._arm_qadr] = HOME_Q
         self.data.qpos[self._grip_qadr] = GRIPPER_OPEN
@@ -145,8 +152,20 @@ class TabletopSim:
     def _on_step(self, i: int) -> None:
         if self.record and i % 8 == 0:
             self.frames.append(self.render())
-        if self._live_dir and time.monotonic() - self._last_live > 0.06:
-            self.write_live_frame()
+        if self._live_dir:
+            self._pace()
+            if time.monotonic() - self._last_live > 0.04:
+                self.write_live_frame()
+
+    def _pace(self) -> None:
+        """Live mode only: keep simulated time in step with wall-clock time so motion plays smoothly."""
+        now = time.monotonic()
+        if now - self._pace_wall > 0.5:  # idle gap (agent was thinking): re-anchor instead of fast-forwarding
+            self._pace_wall, self._pace_sim = now, self.data.time
+            return
+        ahead = (self.data.time - self._pace_sim) - (now - self._pace_wall)
+        if ahead > 0:
+            time.sleep(ahead)
 
     def write_live_frame(self) -> None:
         self._last_live = time.monotonic()
@@ -201,6 +220,17 @@ class TabletopSim:
         self.move_to(x, y, 0.012 + APPROACH_HEIGHT, duration=0.6)
         if held is None:
             raise SkillError("place executed with an empty gripper")
+        if self.slip and self._rng.random() < self.slip:
+            self._bounce_out(held)
+
+    def _bounce_out(self, name: str) -> None:
+        """Silent failure: move the just-placed object off the tray; the caller is not told."""
+        tray = self.data.xpos[self.model.body(TRAY_NAME).id]
+        adr = self.model.joint(self.model.body(name).jntadr[0]).qposadr[0]
+        self.data.qpos[adr : adr + 7] = [tray[0] + 0.07, tray[1] - 0.02, 0.012, 1, 0, 0, 0]
+        self.data.qvel[self.model.joint(self.model.body(name).jntadr[0]).dofadr[0] : ][:6] = 0
+        mujoco.mj_forward(self.model, self.data)
+        self._settle(60)
 
     def place_in_tray(self) -> None:
         tray = self.data.xpos[self.model.body(TRAY_NAME).id]

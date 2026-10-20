@@ -100,7 +100,7 @@ async def reset_scene(seed: int | None = None) -> dict:
                     break
             taken.append((x, y))
             layout[name] = (x, y)
-    sim.reset(layout)
+    sim.reset(layout, seed=seed)
     return _result(True, "scene reset")
 
 
