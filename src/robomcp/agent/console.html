@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RoboMCP 控制台</title>
+<style>
+/* Layout: task bar on top; live camera on the left, agent trace on the right. */
+:root {
+  --bg: #0f1413; --panel: #172020; --line: #26302f; --fg: #e4ece9; --muted: #8fa19b;
+  --accent: #6fcfb0; --model: #9db4ea; --tool: #e2b071; --bad: #ef8a7e; --good: #7fd6a2;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --body: -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--body); }
+header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+header h1 { font-size: 17px; margin: 0 12px 0 0; letter-spacing: 0.02em; }
+input, select, button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+#goal { flex: 1 1 320px; min-width: 0; }
+#seed { width: 84px; }
+button { cursor: pointer; }
+button.go { background: var(--accent); color: #0f1413; border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: 0.5; cursor: default; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 18px 0; }
+.chip { font-size: 13px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); }
+.chip:hover { color: var(--fg); border-color: var(--accent); }
+main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; padding: 16px 18px; }
+.pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.pane h2 { margin: 0; padding: 10px 14px; font-size: 12px; letter-spacing: 0.08em; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; }
+#cam { display: block; width: 100%; height: auto; border-radius: 0 0 10px 10px; background: #000; aspect-ratio: 4 / 3; object-fit: contain; }
+#log { padding: 12px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 190px); overflow-y: auto; }
+.ev { border-radius: 8px; padding: 8px 12px; font-size: 14px; border-left: 3px solid var(--line); background: rgba(255,255,255,0.03); }
+.ev .k { font-size: 11px; letter-spacing: 0.08em; color: var(--muted); }
+.ev pre { margin: 4px 0 0; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.ev.plan { border-left-color: var(--model); }
+.ev.tool { border-left-color: var(--tool); }
+.ev.say { border-left-color: var(--accent); }
+.ev.verify.pass { border-left-color: var(--good); }
+.ev.verify.fail, .ev.error { border-left-color: var(--bad); }
+.ev ol { margin: 4px 0 0; padding-left: 20px; }
+.status { font-family: var(--mono); }
+.empty { color: var(--muted); font-size: 14px; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } #log { max-height: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>RoboMCP 控制台</h1>
+  <input id="goal" value="把桌上所有方块都放进托盘" aria-label="任务">
+  <select id="mode" aria-label="Harness 模式">
+    <option value="plan" selected>plan：规划 + 执行 + 校验</option>
+    <option value="verify">verify：执行 + 校验</option>
+    <option value="bare">bare：裸循环</option>
+  </select>
+  <input id="seed" placeholder="随机种子" aria-label="随机种子">
+  <button class="go" id="go">运行</button>
+</header>
+<div class="chips">
+  <button class="chip">把红色方块放进托盘</button>
+  <button class="chip">把桌上所有方块都放进托盘</button>
+  <button class="chip">把离托盘最远的那个方块放进托盘，其他方块不要动</button>
+  <button class="chip">把绿色方块放进托盘，不要动蓝色方块</button>
+  <button class="chip">把黄色方块放进托盘</button>
+</div>
+<main>
+  <section class="pane">
+    <h2><span>仿真画面（MuJoCo · SO-101）</span><span class="status" id="status">空闲</span></h2>
+    <img id="cam" src="/frame.jpg" alt="机械臂仿真画面">
+  </section>
+  <section class="pane">
+    <h2><span>Agent 轨迹</span><span id="model"></span></h2>
+    <div id="log"><div class="empty">输入任务后点"运行"。规划、每次工具调用、校验结果会依次出现在这里。</div></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let since = 0, running = false;
+
+function esc(s) { return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+function render(e) {
+  const d = document.createElement("div");
+  if (e.kind === "start") {
+    d.className = "ev"; d.innerHTML = `<div class="k">开始 · 模式 ${esc(e.mode)}${e.seed != null ? " · 种子 " + e.seed : ""}</div><pre>${esc(e.goal)}</pre>`;
+  } else if (e.kind === "plan") {
+    const p = e.plan || {};
+    d.className = "ev plan";
+    d.innerHTML = `<div class="k">规划子 Agent · ${p.feasible === false ? "判断不可行" : "可行"}</div><pre>${esc(p.reason)}</pre>` +
+      (p.steps && p.steps.length ? `<ol>${p.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : "");
+  } else if (e.kind === "tool") {
+    d.className = "ev tool"; d.innerHTML = `<div class="k">工具调用</div><pre>${esc(e.name)}(${esc(JSON.stringify(e.args))})\n→ ${esc(e.summary)}</pre>`;
+  } else if (e.kind === "say") {
+    d.className = "ev say"; d.innerHTML = `<div class="k">执行 Agent</div><pre>${esc(e.text)}</pre>`;
+  } else if (e.kind === "verify") {
+    const v = e.verdict || {};
+    d.className = "ev verify " + (v.passed ? "pass" : "fail");
+    d.innerHTML = `<div class="k">校验子 Agent · ${v.passed ? "通过" : "未通过"}</div><pre>${esc(v.reason)}</pre>`;
+  } else if (e.kind === "done") {
+    d.className = "ev"; d.innerHTML = `<div class="k">结束</div><pre>工具调用 ${e.tool_calls} 次 · 模型调用 ${e.model_calls} 次 · ${e.seconds}s\n输入 ${e.prompt_tokens} token · 缓存命中 ${(e.cache_hit_rate * 100).toFixed(1)}%</pre>`;
+  } else if (e.kind === "error") {
+    d.className = "ev error"; d.innerHTML = `<div class="k">出错</div><pre>${esc(e.message)}</pre>`;
+  } else { return null; }
+  return d;
+}
+
+async function poll() {
+  try {
+    const r = await fetch(`/events?since=${since}`); const j = await r.json();
+    const log = $("log");
+    if (since === 0 && j.events.length) log.innerHTML = "";
+    j.events.forEach((e) => { const d = render(e); if (d) log.appendChild(d); });
+    if (j.events.length) log.scrollTop = log.scrollHeight;
+    since = j.total; running = j.running;
+    $("status").textContent = running ? "运行中…" : "空闲";
+    $("go").disabled = running;
+  } catch (e) { /* server restarting */ }
+}
+
+function refreshFrame() { $("cam").src = "/frame.jpg?t=" + Date.now(); }
+
+$("go").addEventListener("click", async () => {
+  since = 0; $("log").innerHTML = '<div class="empty">启动中…</div>';
+  await fetch("/run", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ goal: $("goal").value, mode: $("mode").value, seed: $("seed").value }) });
+  poll();
+});
+document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => { $("goal").value = c.textContent; }));
+$("goal").addEventListener("keydown", (e) => { if (e.key === "Enter" && !$("go").disabled) $("go").click(); });
+
+setInterval(poll, 400);
+setInterval(() => { if (running) refreshFrame(); }, 120);
+setInterval(refreshFrame, 2000);
+poll();
+</script>
+</body>
+</html>
