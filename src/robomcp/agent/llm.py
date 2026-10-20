@@ -1,8 +1,9 @@
-"""DeepSeek chat client (OpenAI-compatible API) plus MCP → function-calling schema conversion."""
+"""Chat client for OpenAI-compatible APIs (DeepSeek or Gemini) plus MCP → function-calling schema conversion."""
 
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -35,25 +36,45 @@ class Usage:
         self.calls += 1
         self.prompt += u.prompt_tokens or 0
         self.completion += u.completion_tokens or 0
-        self.cache_hit += getattr(u, "prompt_cache_hit_tokens", 0) or 0
+        # DeepSeek reports prompt_cache_hit_tokens; OpenAI-style APIs (Gemini) report prompt_tokens_details.cached_tokens
+        details = getattr(u, "prompt_tokens_details", None)
+        self.cache_hit += (getattr(u, "prompt_cache_hit_tokens", 0) or 0) or (getattr(details, "cached_tokens", 0) or 0)
 
     @property
     def hit_rate(self) -> float:
         return self.cache_hit / self.prompt if self.prompt else 0.0
 
 
+PROVIDERS = {
+    "deepseek": ("https://api.deepseek.com", "deepseek-chat"),
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-flash-latest"),
+}
+
+
+def _keychain(service: str) -> str:
+    out = subprocess.run(["security", "find-generic-password", "-s", service, "-w"], capture_output=True, text=True)
+    return out.stdout.strip()
+
+
 @dataclass
 class LLM:
+    """Provider: LLM_PROVIDER env, else DeepSeek if DEEPSEEK_API_KEY is set, else Gemini (key from the macOS Keychain)."""
+
     model: str = ""
     usage: Usage = field(default_factory=Usage)
 
     def __post_init__(self) -> None:
         load_env()
-        key = os.environ.get("DEEPSEEK_API_KEY")
+        self.provider = os.environ.get("LLM_PROVIDER") or ("deepseek" if os.environ.get("DEEPSEEK_API_KEY") else "gemini")
+        base_url, default_model = PROVIDERS[self.provider]
+        if self.provider == "deepseek":
+            key = os.environ.get("DEEPSEEK_API_KEY")
+        else:
+            key = os.environ.get("GEMINI_API_KEY") or _keychain("gemini-api-key")
         if not key:
-            raise SystemExit(f"DEEPSEEK_API_KEY is not set (put it in {PROJECT_ROOT / '.env'})")
-        self.model = self.model or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-        self.client = OpenAI(api_key=key, base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
+            raise SystemExit(f"no API key for {self.provider} (set it in {PROJECT_ROOT / '.env'} or the Keychain)")
+        self.model = self.model or os.environ.get("LLM_MODEL", default_model)
+        self.client = OpenAI(api_key=key, base_url=base_url)
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None):
         kwargs = {"model": self.model, "messages": messages, "temperature": 0}
@@ -72,7 +93,7 @@ def mcp_to_openai_tools(mcp_tools, exclude: set[str]) -> list[dict]:
             "function": {
                 "name": t.name,
                 "description": t.description or "",
-                "parameters": t.inputSchema or {"type": "object", "properties": {}},
+                "parameters": t.input_schema or {"type": "object", "properties": {}},
             },
         }
         for t in mcp_tools
