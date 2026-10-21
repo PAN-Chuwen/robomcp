@@ -74,8 +74,8 @@ class RunResult:
     planner: dict | None = None
     seconds: float = 0.0
     trace_path: str = ""
-    scene_before: dict | None = None
-    scene_after: dict | None = None
+    scene_before: dict = field(default_factory=dict)
+    scene_after: dict = field(default_factory=dict)
     events: list = field(default_factory=list)
 
 
