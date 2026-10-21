@@ -1,12 +1,13 @@
 """有了 function calling 之后：模型直接给出结构化的调用，代码不用再猜。
 
 需要 Anthropic API 凭据（ANTHROPIC_API_KEY 或 `ant auth login`）：
-    uv run --with anthropic python examples/loop_with_function_calling.py
+    uv run python examples/loop_with_function_calling.py
 """
 
 import json
 
 import anthropic
+from anthropic.types import MessageParam, ToolParam, ToolResultBlockParam
 
 # ---- 同一个玩具世界 ----
 world = {"red_cube": "table", "green_cube": "table", "blue_cube": "table", "holding": None}
@@ -32,7 +33,7 @@ def place_in_tray():
 FUNCS = {"pick": pick, "place_in_tray": place_in_tray}
 
 # ---- 1. 用 JSON Schema 告诉模型有哪些工具（不再靠提示词"教格式"） ----
-TOOLS = [
+TOOLS: list[ToolParam] = [
     {
         "name": "pick",
         "description": "从桌上抓起一个物体。手里已经有东西时会失败。",
@@ -50,7 +51,7 @@ TOOLS = [
 ]
 
 client = anthropic.Anthropic()
-messages = [{"role": "user", "content": "把红色和绿色方块放进托盘"}]
+messages: list[MessageParam] = [{"role": "user", "content": "把红色和绿色方块放进托盘"}]
 
 while True:
     # 2. 调模型：把整份对话 + 工具列表发过去
@@ -65,7 +66,7 @@ while True:
         break
 
     # 4. "读调用"：直接从结构化的 tool_use 块里取名字和参数，不用正则
-    results = []
+    results: list[ToolResultBlockParam] = []
     for block in response.content:
         if block.type != "tool_use":
             continue
