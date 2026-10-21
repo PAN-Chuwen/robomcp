@@ -34,6 +34,25 @@ wheels = [
 ]
 
 [[package]]
+name = "anthropic"
+version = "1.17.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "docstring-parser" },
+    { name = "httpx2" },
+    { name = "jiter" },
+    { name = "opentelemetry-api" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4e/66/4ec271f7607460005276bb09b0d1c749a9ed0cead35a488a8676f15ed6d5/anthropic-1.17.0.tar.gz", hash = "sha256:dcf77a74dde89a9fd12405fca798b012725a107f7c9488454234a74e275c2163", size = 1756371, upload-time = "2026-10-20T22:13:35.117Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/9d/b4d4e46ec05bf19bcfd46c1417337e7cf42b9ecb95c3c63f295e2e9fee4b/anthropic-1.17.0-py3-none-any.whl", hash = "sha256:ccb98b85e1a14f81cf1e2ba348393f341f342bad9e07e014f96c9b69f853aaa7", size = 2094718, upload-time = "2026-10-20T22:13:32.585Z" },
+]
+
+[[package]]
 name = "anyio"
 version = "4.15.1"
 source = { registry = "https://pypi.org/simple" }
@@ -255,6 +274,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/19/4e/1273c4a292b5b6ecd85fed5721200db10ae6d1e4c5b06ebf00af27bade27/daqp-0.10.3-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:08ecf1a01039334ea1d1180019c04f0994fb61442f09ed99b2cb2aee08e25f31", size = 1021102, upload-time = "2026-10-01T23:02:03.795Z" },
     { url = "https://files.pythonhosted.org/packages/46/05/c11dc1bc3ee8abf519051f00be7d087c083184f2e6353f465a2de4618db2/daqp-0.10.3-cp314-cp314t-win32.whl", hash = "sha256:de8d9eb4c171cd78435b89bf8452c3e24c451b6bd28f6eaaaadd2d1d20ea60ab", size = 172695, upload-time = "2026-10-01T23:01:42.712Z" },
     { url = "https://files.pythonhosted.org/packages/98/f5/06f5f2ff89f769d27229992b9b4474033f971b307822a8f9fceeaee1404b/daqp-0.10.3-cp314-cp314t-win_amd64.whl", hash = "sha256:e7f9b5f7557aa10ec50c6bb99980c4e8fd1038f32f646d4a60c740ab915be663", size = 215186, upload-time = "2026-10-01T23:01:43.6Z" },
+]
+
+[[package]]
+name = "docstring-parser"
+version = "0.18.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/4d/f332313098c1de1b2d2ff91cf2674415cc7cddab2ca1b01ae29774bd5fdf/docstring_parser-0.18.0.tar.gz", hash = "sha256:292510982205c12b1248696f44959db3cdd1740237a968ea1e2e7a900eeb2015", size = 29341, upload-time = "2026-04-14T04:09:19.867Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a7/5f/ed01f9a3cdffbd5a008556fc7b2a08ddb1cc6ace7effa7340604b1d16699/docstring_parser-0.18.0-py3-none-any.whl", hash = "sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b", size = 22484, upload-time = "2026-04-14T04:09:18.638Z" },
 ]
 
 [[package]]
@@ -1057,6 +1085,11 @@ dependencies = [
     { name = "pillow" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "anthropic" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = ">=2.3.0" },
@@ -1066,6 +1099,9 @@ requires-dist = [
     { name = "openai", specifier = ">=3.35.1" },
     { name = "pillow", specifier = ">=12.3.0" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "anthropic", specifier = ">=1.17.0" }]
 
 [[package]]
 name = "rpds-py"

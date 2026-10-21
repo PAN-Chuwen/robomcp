@@ -26,3 +26,8 @@ packages = ["src/robomcp"]
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
+
+[dependency-groups]
+dev = [
+    "anthropic>=1.17.0",
+]
