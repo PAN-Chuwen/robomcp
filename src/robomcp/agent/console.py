@@ -51,7 +51,7 @@ STATE = State()
 
 
 class Handler(BaseHTTPRequestHandler):
-    def log_message(self, *args) -> None:  # keep the terminal quiet
+    def log_message(self, format: str, *args) -> None:  # keep the terminal quiet
         pass
 
     def _send(self, code: int, body: bytes, ctype: str) -> None:
