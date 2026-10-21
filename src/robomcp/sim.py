@@ -177,11 +177,14 @@ class TabletopSim:
             time.sleep(ahead)
 
     def write_live_frame(self) -> None:
+        live = self._live_dir
+        if live is None:
+            return
         self._last_live = time.monotonic()
-        self._live_dir.mkdir(parents=True, exist_ok=True)
-        tmp = self._live_dir / "frame.tmp.jpg"
+        live.mkdir(parents=True, exist_ok=True)
+        tmp = live / "frame.tmp.jpg"
         Image.fromarray(self.render()).save(tmp, quality=80)
-        tmp.replace(self._live_dir / "frame.jpg")  # atomic swap so the browser never sees a half-written file
+        tmp.replace(live / "frame.jpg")  # atomic swap so the browser never sees a half-written file
 
     def _move_joints(self, q_target: np.ndarray, duration: float = 1.0) -> None:
         q_start = self.data.ctrl[:5].copy()
