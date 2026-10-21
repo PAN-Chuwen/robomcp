@@ -7,6 +7,8 @@ SO-101 robot arm in a MuJoCo tabletop scene, exposed to LLM agents as MCP tools,
 ```
 robomcp/
 ├── pyproject.toml / uv.lock        # uv project; entry points robomcp-server, robomcp-agent
+├── typings/mujoco/                 # stubgen-generated stubs for MuJoCo's compiled bindings (pyright);
+│                                   #   regenerate command in typings/mujoco/__init__.pyi
 ├── examples/
 │   ├── loop_before_function_calling.py   # agent loop with regex-parsed text actions (offline demo)
 │   └── loop_with_function_calling.py     # same loop with structured tool calls
