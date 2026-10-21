@@ -92,7 +92,8 @@ class TabletopSim:
         p = self.data.xpos[self.model.body(name).id].copy()
         tray = self.data.xpos[self.model.body(TRAY_NAME).id]
         in_tray = bool(abs(p[0] - tray[0]) < 0.038 and abs(p[1] - tray[1]) < 0.038 and p[2] < 0.04)
-        return ObjectState(name, tuple(round(float(v), 4) for v in p), in_tray, bool(p[2] > 0.03 and not in_tray))
+        x, y, z = (round(float(v), 4) for v in p)
+        return ObjectState(name, (x, y, z), in_tray, bool(p[2] > 0.03 and not in_tray))
 
     def scene(self) -> dict:
         tray = self.data.xpos[self.model.body(TRAY_NAME).id]
