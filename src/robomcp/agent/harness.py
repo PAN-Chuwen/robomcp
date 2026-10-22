@@ -93,13 +93,15 @@ class RunResult:
 
 class Harness:
     def __init__(self, mode: str = "plan", max_turns: int = 20, max_verify: int = 2, verbose: bool = True,
-                 on_event=None, live: bool = False, slip: float = 0.0, slip_mode: str = "immediate"):
+                 on_event=None, live: bool = False, slip: float = 0.0, slip_mode: str = "immediate",
+                 llm: LLM | None = None, trace_dir: Path = TRACE_DIR):
         assert mode in ("bare", "verify", "plan"), mode
         self.mode, self.max_turns, self.max_verify, self.verbose = mode, max_turns, max_verify, verbose
         self.on_event, self.live = on_event, live  # on_event(dict) feeds the web console
         self.slip = slip  # probability of a silent placement failure injected by the simulator
         self.slip_mode = slip_mode  # "immediate" (visible in the tool result) or "delayed" (tool result is stale)
-        self.llm = LLM()
+        self.llm = llm or LLM()  # injectable: the platform worker and tests pass their own client
+        self.trace_dir = trace_dir
 
     # ------------------------------------------------------------------ utils
 
@@ -178,8 +180,9 @@ class Harness:
         self.llm.usage = Usage()
         t0 = time.time()
         run_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{self.mode}-{uuid.uuid4().hex[:6]}"  # unique across parallel evals
-        TRACE_DIR.mkdir(parents=True, exist_ok=True)
-        res.trace_path, res.episode_log = str(TRACE_DIR / f"{run_id}.jsonl"), str(TRACE_DIR / f"{run_id}.env.jsonl")
+        self.trace_dir.mkdir(parents=True, exist_ok=True)
+        res.trace_path = str(self.trace_dir / f"{run_id}.jsonl")
+        res.episode_log = str(self.trace_dir / f"{run_id}.env.jsonl")
         self._log(res, "start", goal=goal, mode=self.mode, seed=seed, slip=self.slip,
                   slip_mode=self.slip_mode, trace_version=TRACE_VERSION, episode_log=Path(res.episode_log).name,
                   mujoco=mujoco.__version__, model=self.llm.model)
