@@ -14,6 +14,8 @@ import mujoco
 import numpy as np
 from PIL import Image
 
+from robomcp.perception import OraclePerception, Perception
+
 MODEL_DIR = Path(__file__).parent / "model"
 ARM_JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
 GRIPPER_OPEN = 1.2
@@ -71,6 +73,7 @@ class TabletopSim:
         # "delayed": it rolls off after the skill has returned, so the returned scene is stale.
         self.slip_mode = os.environ.get("ROBOMCP_SLIP_MODE", "immediate")
         self._pending_bounce: str | None = None
+        self.perception: Perception = OraclePerception()
         self._rng = random.Random(0)
         self._renderer = mujoco.Renderer(self.model, height=render_size[1], width=render_size[0])
         self._cam = mujoco.MjvCamera()
@@ -95,18 +98,28 @@ class TabletopSim:
         self.frames.clear()
         self._settle(100)
 
-    def object_state(self, name: str) -> ObjectState:
-        if name not in self.objects:
-            raise SkillError(f"unknown object '{name}', known: {self.objects}")
-        p = self.data.xpos[self.model.body(name).id].copy()
+    def _state(self, name: str, p: np.ndarray) -> ObjectState:
         tray = self.data.xpos[self.model.body(TRAY_NAME).id]
         in_tray = bool(abs(p[0] - tray[0]) < 0.038 and abs(p[1] - tray[1]) < 0.038 and p[2] < 0.04)
         x, y, z = (round(float(v), 4) for v in p)
         return ObjectState(name, (x, y, z), in_tray, bool(p[2] > 0.03 and not in_tray))
 
-    def scene(self) -> dict:
+    def object_state(self, name: str) -> ObjectState:
+        """Ground truth. For scoring and failure injection only; skills act on perceived_state."""
+        if name not in self.objects:
+            raise SkillError(f"unknown object '{name}', known: {self.objects}")
+        return self._state(name, self.data.xpos[self.model.body(name).id])
+
+    def perceived_state(self, name: str) -> ObjectState:
+        """What perception estimates; skills aim at this, so perception error becomes execution error."""
+        seen = self.perception.detect(self)
+        if name not in seen:
+            raise SkillError(f"no object '{name}' detected, detected: {sorted(seen)}")
+        return self._state(name, seen[name])
+
+    def _scene(self, states: list[ObjectState], holding: str | bool | None) -> dict:
         tray = self.data.xpos[self.model.body(TRAY_NAME).id]
-        objects = [vars(self.object_state(n)) for n in self.objects]
+        objects = [vars(s) for s in states]
         # Derived relation computed in code: models misjudge distances when comparing raw coordinates.
         for o in objects:
             o["distance_to_tray_m"] = round(float(np.hypot(o["position"][0] - tray[0], o["position"][1] - tray[1])), 3)
@@ -116,9 +129,18 @@ class TabletopSim:
             "gripper": {
                 "position": tuple(round(float(v), 4) for v in self.tip_position()),
                 "opening": round(float(self.data.qpos[self._grip_qadr]), 3),
-                "holding": self.held_object(),
+                "holding": holding,
             },
         }
+
+    def observe(self) -> dict:
+        """The agent's view: perceived objects and proprioception (holding is a bool: the gripper cannot tell what)."""
+        seen = self.perception.detect(self)
+        return self._scene([self._state(n, p) for n, p in seen.items()], self.gripper_holding())
+
+    def truth(self) -> dict:
+        """The true scene, same shape as observe(); holding names the object."""
+        return self._scene([self.object_state(n) for n in self.objects], self.held_object())
 
     def tip_position(self) -> np.ndarray:
         return self.data.site_xpos[self.model.site(self._site).id].copy()
@@ -225,7 +247,7 @@ class TabletopSim:
     # ----------------------------------------------------------------- skills
 
     def pick(self, name: str) -> bool:
-        state = self.object_state(name)
+        state = self.perceived_state(name)
         if state.in_tray:
             raise SkillError(f"{name} is already in the tray")
         if self.gripper_holding():
@@ -288,8 +310,8 @@ class TabletopSim:
         Cubes collide, so each needs its own spot; earlier cubes drift a few mm, hence "farthest".
         """
         tray = self.data.xpos[self.model.body(TRAY_NAME).id]
-        held = self.held_object()
-        taken = [self.object_state(n).position for n in self.objects if n != held and self.object_state(n).in_tray]
+        seen = self.observe()["objects"]
+        taken = [o["position"] for o in seen if o["in_tray"]]  # the held object is lifted, never in_tray
         slots = [(float(tray[0] + dx), float(tray[1] + dy)) for dx, dy in TRAY_SLOTS]
         clearance = [min((np.hypot(x - p[0], y - p[1]) for p in taken), default=1.0) for x, y in slots]
         best = int(np.argmax(clearance))

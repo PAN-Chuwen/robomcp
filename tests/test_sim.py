@@ -29,14 +29,14 @@ def test_closing_on_nothing_is_not_holding(sim):
 
 def test_pick_reports_missed_grasp(sim, monkeypatch):
     sim.reset(LAYOUT)
-    real = sim.object_state
+    real = sim.perceived_state
 
     def off_by_3cm(name):  # a perception error well beyond the ~6 mm grasp tolerance
         s = real(name)
         s.position = (s.position[0] + 0.03, s.position[1], s.position[2])
         return s
 
-    monkeypatch.setattr(sim, "object_state", off_by_3cm)
+    monkeypatch.setattr(sim, "perceived_state", off_by_3cm)
     with pytest.raises(SkillError, match="grasp missed"):
         sim.pick("red_cube")
 
