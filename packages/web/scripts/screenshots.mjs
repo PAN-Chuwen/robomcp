@@ -41,14 +41,18 @@ try {
     urls.compare = page.url();
     await page.goto(urls.project);
   }
-  await page.click('a[href^="/experiments/"]');
-  await page.waitForURL(/\/experiments\//);
-  urls.experiment = page.url();
-  const failed = page.locator('tr:has(.badge:text-is("failed")) a[href^="/episodes/"]');
-  const anyEpisode = page.locator('a[href^="/episodes/"]');
-  await ((await failed.count()) ? failed.first() : anyEpisode.first()).click();
-  await page.waitForURL(/\/episodes\//);
-  urls.episode = page.url();
+  // Prefer an experiment with a failed episode: its replay is the interesting one.
+  const experiments = await page.locator('a[href^="/experiments/"]').evaluateAll((as) => as.map((a) => a.href));
+  for (const href of experiments) {
+    await page.goto(href);
+    const failed = page.locator('tr:has(.badge:text-is("failed")) a[href^="/episodes/"]');
+    if (!urls.experiment || (await failed.count())) {
+      urls.experiment = href;
+      const anyEpisode = page.locator('a[href^="/episodes/"]');
+      urls.episode = await ((await failed.count()) ? failed.first() : anyEpisode.first()).evaluate((a) => a.href);
+    }
+    if (await failed.count()) break;
+  }
   const storage = await ctx.storageState();
   await ctx.close();
 
@@ -61,9 +65,7 @@ try {
         await p.goto(url);
         await p.waitForLoadState("networkidle");
         if (name === "episode") {
-          await p.keyboard.press("ArrowRight"); // exercise the scrubber: step 1 → the scene changes
-          await p.keyboard.press("ArrowRight");
-          await p.keyboard.press("ArrowRight");
+          for (let i = 0; i < 5; i++) await p.keyboard.press("ArrowRight"); // scrub with the keyboard to step 5
         }
         const file = join(out, `${name}-${vp}-${scheme}.png`);
         await p.screenshot({ path: file, fullPage: true });
