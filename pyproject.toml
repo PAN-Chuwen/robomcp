@@ -35,3 +35,4 @@ dev = [
 
 [tool.uv.workspace]
 members = ["packages/*"]
+exclude = ["packages/web"]  # Next.js app, not a Python package
