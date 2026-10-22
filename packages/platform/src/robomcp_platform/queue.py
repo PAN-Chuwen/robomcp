@@ -69,8 +69,15 @@ def claim_next(session: Session, worker_id: str) -> EpisodeSpec | None:
     if row is None:
         return None
     episode_id, experiment_id = row
+    # Mark the experiment running without waiting: if another claimer holds the row it is doing the same.
     session.execute(
-        update(Experiment).where(Experiment.id == experiment_id, Experiment.status == "queued").values(status="running")
+        update(Experiment)
+        .where(Experiment.id.in_(
+            select(Experiment.id)
+            .where(Experiment.id == experiment_id, Experiment.status == "queued")
+            .with_for_update(skip_locked=True)
+        ))
+        .values(status="running")
     )
     episode, experiment, suite_version, agent_version = session.execute(
         select(Episode, Experiment, SuiteVersion, AgentVersion)
