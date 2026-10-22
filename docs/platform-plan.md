@@ -59,6 +59,8 @@ These decide what the environment must model; probes in `scripts/`.
 | Grasp position tolerance | succeeds within 6 mm; tangential 9 mm misses; radial asymmetric (+9 mm outward misses, −15 mm inward holds) | perception error budget is about 6 mm |
 | Cube orientation | no effect: closing jaws rotate the cube into line (−45° → 22°) | gripper-angle choice needs elongated objects |
 | Top camera | 1.29 mm/px at 640×480, a cube is ~20×20 px; the target is fully occluded while hovering above it | look only after retracting, or add a wrist camera |
+| Jaw opening | 100 mm fully open, 39 mm at the release opening, 4 mm closed | an elongated object needs orientation only if the pre-grasp opening is sized to it (as real systems do to spare neighbours) |
+| Grasp signal | gripper joint stops at +0.08 rad on a 24 mm cube, reaches −0.17 rad on nothing; matches truth at every offset tried | grasp success can come from proprioception alone |
 | Injected slip | random, independent of the agent's action | blind retry is optimal; replanning needs failures with a cause |
 | Skill results | return the full ground-truth scene | the agent and verifier currently read truth |
 | Perception difficulty | single-colour cubes on a plain table are trivial to threshold | a VLM earns its place on semantics, geometry comes from depth |
