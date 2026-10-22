@@ -13,9 +13,4 @@ Active work only; see `docs/platform-plan.md` for the plan.
       finishes the episode and drops the result)
 - [ ] Split into the planned `packages/{env,harness,api,worker,web}` layout (API and worker share one package now)
 - [ ] Worker container image + compose service; CI job running `make test` against a Postgres service
-- [ ] Fair scheduling across orgs: the claim query is global FIFO, so one org's backlog starves the others
-      (seen in the first end-to-end run: the worker ran 4 stale dev-org episodes before ours); per-org round
-      robin or weighted claims, plus per-org concurrency quotas
-- [ ] Validate suite tasks at creation (known `check`, perturbation keys) instead of failing in the worker,
-      where a config error is retried `max_attempts` times
 - [ ] Presigned URLs for `trace_uri` / `episode_log_uri` on episode reads, so the web app can open replays

@@ -145,6 +145,29 @@ sim worker 每个 episode 一个进程，环境通过 MCP 对外，外部 agent 
   - 第一次端到端运行时，worker 先跑了开发库里另一个组织残留的 4 个 episode：claim 是全局先进先出，一个租户的积压会饿死其他租户。已经记进待办：按组织轮转领取，并给每个组织设并发配额。
 - **证据**：端到端运行（真实 Gemini、Postgres、MinIO），红色方块 + delayed slip，种子 1、2：bare 1/2（Wilson [0.09, 0.91]），verify 2/2（[0.34, 1.00]）；从 MinIO 下载下来的产物回放 12/12 步复现。`tests/integration/test_harness_runner.py`（5 个测试）。
 
+### 13. 统计：怎么判断"真的变差了"
+
+- **动机**：README 里 bare 一天之内跑出过 5/10 和 6/10；端到端 demo 里 1/2 的 Wilson 区间是 [0.09, 0.91]。只看成功率，没法判断一次改动有没有让 harness 变差。
+- **设计**：
+  - **配对比较**：两个实验按（task, seed, repeat）对齐，场景完全相同；只有一边成功的"不一致对"才算证据，用精确 McNemar 检验（对不一致对做二项检验）。这样消除了"场景难易不同"带来的方差，同样的样本量下比两个独立成功率的比较更灵敏。
+  - **判定规则**：p < 0.05 才判为 regression 或 improvement，否则是"没有显著差异"。比如 6 个不一致对全部偏向一边，p = 2/64 ≈ 0.031，判回归；5 个不一致对、比例 1:4，p > 0.05，不足以下结论。
+  - **pass^k**（τ-bench 的无偏估计 C(c,k)/C(n,k)）：衡量的是可靠性，不是 k 次里至少成功一次。repeat 共用种子，所以它测的是模型自身的方差。比如 4 次里成功 3 次，pass^1 = 0.75，pass^4 = 0。
+  - 两个实验的 suite 版本不同时，接口会标出来，因为同一个 task key 背后的任务可能已经变了。
+- **证据**：`stats.py`、`results.py`；`tests/unit/test_stats.py`、`tests/integration/test_read_api.py`。
+
+### 14. 队列公平性，以及一个写错的测试
+
+- **动机**：第 12 条发现全局先进先出会让一个组织的积压饿死其他组织。
+- **解法**：领任务时，先选正在运行的 episode 最少的组织，再在组织内按创建时间先后取；可选每组织并发上限 `ROBOMCP_MAX_RUNNING_PER_ORG`。这个上限是"软"的：两个 worker 同时领任务时，可能都看到某组织还差 1 个到上限，结果都领到了。要做成硬上限，每次领任务都得加一把组织级的锁，代价不值得，所以选了软上限，并写进了注释。
+- **踩坑**：我写的"组织内按顺序领取"测试 5 次里失败了 4 次。原因是同一个实验的 episode 是一条 INSERT 插入的，`created_at` 完全相同，排序退回到随机的 UUID。这不是代码的 bug，是测试的假设错了：真正要保证的是"组织内先建的实验先跑"，测试按这个改了，之后连续跑 5 次全部通过。教训是：测试不稳定时，先确认它到底在断言什么。
+- **证据**：`queue.py` 的 `_CLAIM_SQL`；`tests/integration/test_fair_queue.py`。
+
+### 15. 在入口处校验，不在 worker 里失败
+
+- **动机**：写错的任务配置（不存在的检查名、slip = 1.5）原来要等到 worker 运行时才报错，而且会被当成基础设施故障重试 3 次。
+- **解法**：建 suite 版本和 agent 版本时就校验，不合法直接返回 422：检查名必须是内置的，失败注入只允许 `slip ∈ [0, 1]` 和 `slip_mode ∈ {immediate, delayed}`，`mode` 只能是 bare / verify / plan。已有的队列测试用的是假任务名，我给它们补上了真实存在的检查，没有为了让测试通过而放宽校验。
+- **证据**：`api/schemas.py`；`tests/integration/test_experiments.py`。
+
 ## 面试可能问到的
 
 - **为什么不让 LLM 直接控制关节？** 见第 1 条。分层（System 2 规划 + System 1 执行）也是业界主流（Gemini Robotics-ER + VLA、π0.5、GR00T N1）。
