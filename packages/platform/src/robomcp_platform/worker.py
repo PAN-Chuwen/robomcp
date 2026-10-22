@@ -46,11 +46,11 @@ class _Heartbeat(threading.Thread):
     def __init__(self, sm: sessionmaker[Session], episode_id: uuid.UUID, worker_id: str, interval_s: float):
         super().__init__(name=f"heartbeat-{episode_id}", daemon=True)
         self._sm, self._episode_id, self._worker_id, self._interval = sm, episode_id, worker_id, interval_s
-        self._stop = threading.Event()
+        self._halt = threading.Event()
         self.lost_claim = threading.Event()
 
     def run(self) -> None:
-        while not self._stop.wait(self._interval):
+        while not self._halt.wait(self._interval):
             try:
                 with self._sm.begin() as s:
                     alive = queue.heartbeat(s, self._episode_id, self._worker_id)
@@ -63,7 +63,7 @@ class _Heartbeat(threading.Thread):
                 return
 
     def stop(self) -> None:
-        self._stop.set()
+        self._halt.set()
         self.join()
 
 
