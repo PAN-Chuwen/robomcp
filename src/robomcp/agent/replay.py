@@ -18,7 +18,6 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import mujoco
 from PIL import Image
 
 import robomcp.server as server
@@ -119,8 +118,12 @@ def _jpeg(frame) -> bytes:
 
 async def replay(path: Path, render: bool = True) -> Replay:
     events, episode, logged = load_run(path)
-    if episode.get("mujoco") != mujoco.__version__:
-        print(f"warning: episode was recorded with MuJoCo {episode.get('mujoco')}, replaying with {mujoco.__version__}")
+    recorded, current = episode.get("fingerprint", {}), server.environment_fingerprint()
+    changed = [k for k in current if recorded.get(k) != current[k]]
+    if not recorded:
+        print("warning: episode log has no environment fingerprint; a divergence cannot be explained")
+    elif changed:  # a divergence is then expected; say why up front
+        print(f"warning: environment changed since recording ({', '.join(changed)}); steps may diverge")
     # The server's tools use its module-level `sim`; swap in a fresh one so the replay starts from scratch, and
     # detach the episode log so the replay does not overwrite the record it is checked against.
     sim = server.sim = TabletopSim(record=render, render_size=(400, 300))

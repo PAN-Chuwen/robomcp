@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import inspect
 import json
 import os
@@ -15,7 +16,7 @@ from mcp.server.mcpserver import Image, MCPServer
 from PIL import Image as PILImage
 
 from robomcp import safety
-from robomcp.sim import SkillError, TabletopSim
+from robomcp.sim import MODEL_DIR, SkillError, TabletopSim
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "out"
 
@@ -33,6 +34,24 @@ sim = TabletopSim()
 # MuJoCo's OpenGL context. Sync tools would run in worker threads and rendering would hang.
 
 
+ENV_SOURCES = ["sim.py", "server.py", "safety.py", "perception.py"]  # code that decides what the environment does
+
+
+def _digest(paths: list[Path]) -> str:
+    h = hashlib.sha256()
+    for p in paths:
+        h.update(p.name.encode())
+        h.update(p.read_bytes())
+    return h.hexdigest()[:16]
+
+
+def environment_fingerprint() -> dict:
+    """What a replay must match to reproduce an episode: model files, environment code, physics engine."""
+    pkg = Path(__file__).parent
+    return {"model": _digest(sorted(p for p in MODEL_DIR.rglob("*") if p.is_file())),
+            "code": _digest([pkg / f for f in ENV_SOURCES]), "mujoco": mujoco.__version__}
+
+
 class EpisodeLog:
     """The environment's own record of an episode: every tool call with what the agent saw and the truth.
 
@@ -44,7 +63,8 @@ class EpisodeLog:
         self.path, self.steps = path, 0
         path.parent.mkdir(parents=True, exist_ok=True)
         self._write({"kind": "episode", "slip": sim.slip, "slip_mode": sim.slip_mode,
-                     "perception": sim.perception.name, "mujoco": mujoco.__version__}, mode="w")
+                     "perception": sim.perception.name, "mujoco": mujoco.__version__,
+                     "fingerprint": environment_fingerprint()}, mode="w")
 
     def _write(self, record: dict, mode: str = "a") -> None:
         with self.path.open(mode) as f:  # one line per call, flushed, so a crashed episode keeps its steps

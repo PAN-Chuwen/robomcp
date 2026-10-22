@@ -93,3 +93,9 @@ def test_rejects_old_trace(tmp_path):
     trace.write_text(json.dumps({"kind": "start", "goal": "x", "trace_version": 2}))
     with pytest.raises(ValueError, match="trace v3"):
         load_run(trace)
+
+
+def test_episode_log_records_environment_fingerprint(tmp_path):
+    header = json.loads(_record(tmp_path / "run.jsonl").read_text().splitlines()[0])
+    assert header["fingerprint"] == server.environment_fingerprint()
+    assert set(header["fingerprint"]) == {"model", "code", "mujoco"}
