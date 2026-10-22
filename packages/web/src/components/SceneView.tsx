@@ -1,7 +1,7 @@
 import type { Scene, StepDiff } from "@/lib/diff";
 import { CUBE_SIZE_M, gridLines, objectColour, toView, type ViewBox } from "@/lib/scene-geometry";
 
-const FONT = 0.0085; // 8.5 mm in scene units
+const FONT = 0.007; // 7 mm in scene units
 
 /**
  * Top-down view of the true scene at one step: robot base at the origin, forward (+x) up, left (+y) left.
@@ -34,12 +34,12 @@ export function SceneView({ truth, diff, box }: { truth: Scene; diff: StepDiff; 
         <line key={`v${v}`} x1={box.minU} x2={box.minU + box.width} y1={v} y2={v} stroke="var(--line)"
           strokeWidth={v === 0 ? 1.5 : 0.75} {...stroke} />
       ))}
-      {vs.filter((v) => v < 0).map((v) => (
+      {vs.filter((v) => v < 0 && v > box.minV + FONT).map((v) => (
         <text key={`vl${v}`} x={box.minU + 0.004} y={v - 0.003} fontSize={FONT} fill="var(--muted)" fontFamily="var(--mono)">
           x {(-v).toFixed(2)}
         </text>
       ))}
-      {us.filter((u) => u !== 0).map((u) => (
+      {us.filter((u) => u !== 0 && u < box.minU + box.width - 0.035).map((u) => (
         <text key={`ul${u}`} x={u + 0.003} y={box.minV + box.height - 0.004} fontSize={FONT} fill="var(--muted)"
           fontFamily="var(--mono)">
           y {(-u).toFixed(2)}
@@ -94,7 +94,7 @@ export function SceneView({ truth, diff, box }: { truth: Scene; diff: StepDiff; 
             <text x={p.u} y={p.v + half + FONT + 0.001} fontSize={FONT} textAnchor="middle" fill="var(--fg)"
               fontFamily="var(--mono)">
               {o.name.replace(/_cube$/, "")}
-              {o.lifted ? ` z${(o.position[2] * 100).toFixed(1)}` : ""}
+              {o.lifted ? ` ↑${(o.position[2] * 100).toFixed(1)}cm` : ""}
             </text>
           </g>
         );

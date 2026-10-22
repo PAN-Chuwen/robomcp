@@ -172,7 +172,7 @@ function StepDetail({ step }: { step: RunStep }) {
                 <th>Agent saw (m)</th>
                 <th>Truth (m)</th>
                 <th className="num">Δ mm</th>
-                <th>In tray (saw / true)</th>
+                <th>In tray saw/true</th>
               </tr>
             </thead>
             <tbody>
