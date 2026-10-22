@@ -1,4 +1,4 @@
-.PHONY: dev services migrate api worker test test-unit down
+.PHONY: dev services migrate api worker web test test-unit down
 
 ALEMBIC := uv run --package robomcp-platform alembic -c packages/platform/alembic.ini
 
@@ -15,6 +15,9 @@ api:                                 ## run the API with reload on :8000
 
 worker:                              ## run one sim worker
 	uv run --package robomcp-platform robomcp-worker
+
+web:                                 ## run the web app (Next.js dev server) on :3000 against the API on :8000
+	cd packages/web && npm install --no-audit --no-fund && npm run dev
 
 test: services                       ## unit + integration tests (throwaway test database)
 	uv run --package robomcp-platform pytest packages/platform/tests
