@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "RoboMCP platform backend: orgs, projects, experiments, Postgres job queue, sim workers"
 requires-python = ">=3.12"
 dependencies = [
+    "robomcp",
     "alembic>=1.20.1",
     "boto3>=1.43.117",
     "fastapi>=0.159.1",
@@ -12,6 +13,9 @@ dependencies = [
     "sqlalchemy>=2.1.6",
     "uvicorn[standard]>=0.54.0",
 ]
+
+[tool.uv.sources]
+robomcp = { workspace = true }
 
 [project.scripts]
 robomcp-platform = "robomcp_platform.cli:main"
