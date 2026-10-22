@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RoboMCP 回放</title>
+<style>
+/* Same look as the console: frames on the left, the run's timeline on the right. */
+:root {
+  --bg: #0f1413; --panel: #172020; --line: #26302f; --fg: #e4ece9; --muted: #8fa19b;
+  --accent: #6fcfb0; --model: #9db4ea; --tool: #e2b071; --bad: #ef8a7e; --good: #7fd6a2;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --body: -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--body); }
+header { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+header h1 { font-size: 17px; margin: 0; }
+.meta { color: var(--muted); font-size: 13px; font-family: var(--mono); overflow-wrap: anywhere; }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.badge { font-size: 12.5px; padding: 1px 10px; border-radius: 999px; border: 1px solid var(--line); }
+.badge.good { color: var(--good); border-color: var(--good); }
+.badge.bad { color: var(--bad); border-color: var(--bad); }
+main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; padding: 16px 18px; }
+.pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.pane h2 { flex-wrap: wrap; margin: 0; padding: 10px 14px; font-size: 12px; letter-spacing: 0.08em; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; }
+#cam { display: block; width: 100%; height: auto; background: #000; aspect-ratio: 4 / 3; object-fit: contain; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 14px; }
+.controls input[type=range] { flex: 1 1 160px; min-width: 0; accent-color: var(--accent); }
+button, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+#pos { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font: 12.5px/1.5 var(--mono); }
+th, td { text-align: left; padding: 4px 14px; border-top: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 500; }
+#log { padding: 12px; display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - 150px); overflow-y: auto; }
+.ev { border-radius: 8px; padding: 6px 12px; font-size: 14px; border-left: 3px solid var(--line); background: rgba(255,255,255,0.03); }
+.ev[data-step] { cursor: pointer; }
+.ev[data-step]:hover { background: rgba(255,255,255,0.06); }
+.ev.current { outline: 1px solid var(--accent); }
+.ev .k { font-size: 11px; letter-spacing: 0.08em; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.ev pre { margin: 2px 0 0; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.ev.plan { border-left-color: var(--model); }
+.ev.tool { border-left-color: var(--tool); }
+.ev.say { border-left-color: var(--accent); }
+.ev.verify.pass { border-left-color: var(--good); }
+.ev.verify.fail { border-left-color: var(--bad); }
+.ev.harness { opacity: 0.6; padding: 2px 12px; }
+.ev.harness pre { font-size: 11.5px; }
+.ev.diverged { border-left-color: var(--bad); background: rgba(239,138,126,0.08); }
+.ok { color: var(--good); } .no { color: var(--bad); }
+label.toggle { font-size: 12px; color: var(--muted); display: flex; gap: 4px; align-items: center; cursor: pointer; }
+body.hide-harness .ev.harness { display: none; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 12px 16px; } #log { max-height: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="goal"></h1>
+  <div class="meta" id="meta"></div>
+  <div class="badges" id="badges"></div>
+</header>
+<main>
+  <section class="pane">
+    <h2><span>回放画面</span><span id="steplabel"></span></h2>
+    <img id="cam" alt="回放画面">
+    <div class="controls">
+      <button id="play">播放</button>
+      <input type="range" id="slider" min="0" value="0" aria-label="帧">
+      <select id="speed" aria-label="速度"><option value="80">1×</option><option value="40">2×</option><option value="20">4×</option></select>
+      <span id="pos"></span>
+    </div>
+    <div class="scroll"><table><thead><tr><th>物体</th><th>位置 (m)</th><th>在托盘</th><th>离托盘 (m)</th></tr></thead><tbody id="scene"></tbody></table></div>
+  </section>
+  <section class="pane">
+    <h2><span>运行轨迹 · 回放校验</span><label class="toggle"><input type="checkbox" id="showharness" checked> 显示 harness 调用</label></h2>
+    <div id="log"></div>
+  </section>
+</main>
+<script>
+const DATA = /*DATA*/null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const frameUrl = (i) => `frames/${String(i).padStart(5, "0")}.jpg`;
+
+const tl = DATA.timeline, start = tl[0];
+const steps = tl.map((e, i) => ({ e, i })).filter((s) => s.e.frames && s.e.frames.length);
+const stepOfFrame = [];
+steps.forEach((s, k) => s.e.frames.forEach((f) => { stepOfFrame[f] = k; }));
+
+$("goal").textContent = start.goal;
+$("meta").textContent = `${DATA.trace} · 模式 ${start.mode} · 种子 ${start.seed ?? "无"} · 静默失败 ${start.slip || 0} ${start.slip_mode || ""} · ${start.model || ""} · MuJoCo ${start.mujoco || "?"}`;
+const checked = tl.filter((e) => e.matches !== undefined), same = checked.filter((e) => e.matches).length;
+const badges = [[`${same}/${checked.length} 步与记录一致`, same === checked.length]];
+if (DATA.divergence !== null) badges.push([`第一次分叉：事件 ${DATA.divergence} ${tl[DATA.divergence].name}`, false]);
+if (DATA.success !== null) badges.push([`评测判定：${DATA.success ? "成功" : "失败"}`, DATA.success]);
+const verdicts = tl.filter((e) => e.kind === "verify");
+if (verdicts.length) {
+  const v = verdicts[verdicts.length - 1].verdict.passed;
+  badges.push([`校验者最终结论：${v ? "通过" : "未通过"}`, DATA.success === null ? v : v === DATA.success]);
+}
+$("badges").innerHTML = badges.map(([t, good]) => `<span class="badge ${good ? "good" : "bad"}">${esc(t)}</span>`).join("");
+
+function check(e) {
+  if (e.matches === undefined) return "";
+  return e.matches ? `<span class="ok">✓ 复现</span>` : `<span class="no">✗ ${e.drift_mm} mm ${esc(e.mismatches.join("; "))}</span>`;
+}
+
+const log = $("log");
+tl.forEach((e, i) => {
+  const d = document.createElement("div");
+  if (e.kind === "start") return;
+  if (e.kind === "plan") {
+    const p = e.plan || {};
+    d.className = "ev plan";
+    d.innerHTML = `<div class="k">规划 · ${p.feasible === false ? "判断不可行" : "可行"}</div><pre>${esc(p.reason)}\n${esc((p.steps || []).join(" → "))}</pre>`;
+  } else if (e.kind === "tool" || e.kind === "harness_call") {
+    const harness = e.kind === "harness_call";
+    d.className = `ev ${harness ? "harness" : "tool"}${e.matches === false ? " diverged" : ""}`;
+    d.innerHTML = `<div class="k"><span>${harness ? "harness" : "工具调用"}</span>${check(e)}</div><pre>${esc(e.name)}(${esc(JSON.stringify(e.args))})${!harness && e.summary ? "\n→ " + esc(e.summary) : ""}</pre>`;
+  } else if (e.kind === "say") {
+    d.className = "ev say"; d.innerHTML = `<div class="k">执行 Agent</div><pre>${esc(e.text)}</pre>`;
+  } else if (e.kind === "verify") {
+    const v = e.verdict || {};
+    d.className = "ev verify " + (v.passed ? "pass" : "fail");
+    d.innerHTML = `<div class="k">校验 · ${v.passed ? "通过" : "未通过"}</div><pre>${esc(v.reason)}</pre>`;
+  } else if (e.kind === "done") {
+    d.className = "ev"; d.innerHTML = `<div class="k">结束</div><pre>工具调用 ${e.tool_calls} 次 · 模型调用 ${e.model_calls} 次 · ${e.seconds}s · 输入 ${e.prompt_tokens} token</pre>`;
+  } else return;
+  const k = steps.findIndex((s) => s.i === i);
+  if (k >= 0) { d.dataset.step = k; d.addEventListener("click", () => { pause(); show(steps[k].e.frames[0]); }); }
+  log.appendChild(d);
+});
+
+const slider = $("slider");
+slider.max = Math.max(DATA.frames - 1, 0);
+let frame = 0, timer = null, currentStep = -1;
+const preload = [];
+
+function show(f) {
+  frame = f; slider.value = f; $("cam").src = frameUrl(f);
+  $("pos").textContent = `${f + 1}/${DATA.frames}`;
+  for (let j = 1; j <= 8 && f + j < DATA.frames; j++) { (preload[j % 8] ||= new Image()).src = frameUrl(f + j); }
+  const k = stepOfFrame[f];
+  if (k === currentStep) return;
+  currentStep = k;
+  const s = steps[k].e;
+  $("steplabel").textContent = `${s.by === "harness" ? "harness" : "executor"} · ${s.name}`;
+  document.querySelectorAll(".ev.current").forEach((n) => n.classList.remove("current"));
+  const node = log.querySelector(`[data-step="${k}"]`);
+  if (node) { node.classList.add("current"); if (timer) node.scrollIntoView({ block: "nearest" }); }
+  $("scene").innerHTML = (s.scene ? s.scene.objects : []).map((o) =>
+    `<tr><td>${esc(o.name)}</td><td>${o.position.map((v) => v.toFixed(3)).join(", ")}</td><td>${o.in_tray ? "是" : "否"}</td><td>${o.distance_to_tray_m}</td></tr>`).join("");
+}
+function pause() { clearInterval(timer); timer = null; $("play").textContent = "播放"; }
+function play() {
+  if (frame >= DATA.frames - 1) show(0);
+  $("play").textContent = "暂停";
+  timer = setInterval(() => { if (frame >= DATA.frames - 1) pause(); else show(frame + 1); }, +$("speed").value);
+}
+$("play").addEventListener("click", () => (timer ? pause() : play()));
+$("speed").addEventListener("change", () => { if (timer) { pause(); play(); } });
+slider.addEventListener("input", () => { pause(); show(+slider.value); });
+$("showharness").addEventListener("change", (ev) => document.body.classList.toggle("hide-harness", !ev.target.checked));
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === " ") { ev.preventDefault(); timer ? pause() : play(); }
+  if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") {
+    pause();
+    const k = Math.min(Math.max(stepOfFrame[frame] + (ev.key === "ArrowRight" ? 1 : -1), 0), steps.length - 1);
+    show(steps[k].e.frames[0]);
+  }
+});
+if (DATA.frames) show(0);
+</script>
+</body>
+</html>

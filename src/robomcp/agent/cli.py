@@ -2,6 +2,7 @@
 
   robomcp-agent run "把红色方块放进托盘" --mode plan --seed 3 [--record demo.gif]
   robomcp-agent eval --modes bare,verify,plan --seeds 0,1,2
+  robomcp-agent replay out/traces/<run>.jsonl [--no-render]
   robomcp-agent console [--port 8765]
 """
 
@@ -79,6 +80,9 @@ def main() -> None:
     e.add_argument("--slip", type=float, default=0.0, help="probability of a silent placement failure")
     e.add_argument("--slip-mode", default="immediate", choices=["immediate", "delayed"],
                    help="delayed: the object rolls off after the tool has returned, so its result is stale")
+    p = sub.add_parser("replay", help="replay a trace in the simulator, check it step by step, write a viewer")
+    p.add_argument("trace")
+    p.add_argument("--no-render", action="store_true", help="only check reproducibility, no frames or page")
     c = sub.add_parser("console", help="web console with live view")
     c.add_argument("--port", type=int, default=8765)
     args = ap.parse_args()
@@ -93,6 +97,16 @@ def main() -> None:
                                  args.tasks.split(",") if args.tasks else None, args.slip, args.slip_mode, out))
         _summary(rows)
         print(f"\nresults: {out}")
+    elif args.cmd == "replay":
+        from pathlib import Path
+
+        from robomcp.agent.replay import replay, report, write_viewer
+
+        rep = asyncio.run(replay(Path(args.trace), render=not args.no_render))
+        report(rep)
+        if not args.no_render:
+            print(f"viewer: {write_viewer(rep)}")
+        raise SystemExit(0 if rep.divergence is None else 1)
     else:
         from robomcp.agent.console import serve
         serve(args.port)
