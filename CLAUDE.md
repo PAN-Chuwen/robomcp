@@ -12,6 +12,7 @@ robomcp/
 ├── examples/
 │   ├── loop_before_function_calling.py   # agent loop with regex-parsed text actions (offline demo)
 │   └── loop_with_function_calling.py     # same loop with structured tool calls
+├── docs/                           # platform-plan.md, development.md
 ├── tests/
 │   └── test_replay.py              # replay reproduces scripted runs, flags the first divergent step
 └── src/robomcp/
@@ -75,3 +76,5 @@ API key: `DEEPSEEK_API_KEY` or `GEMINI_API_KEY` in `.env` (gitignored); on macOS
 ## Docs references
 
 - `README.md` — overview, results table, how to run
+- `docs/platform-plan.md` — SaaS platform plan, measured mechanisms, milestones
+- `docs/development.md` — active todos
