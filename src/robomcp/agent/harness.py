@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -176,7 +177,7 @@ class Harness:
         res = RunResult(goal=goal, mode=self.mode)
         self.llm.usage = Usage()
         t0 = time.time()
-        run_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{self.mode}"
+        run_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{self.mode}-{uuid.uuid4().hex[:6]}"  # unique across parallel evals
         TRACE_DIR.mkdir(parents=True, exist_ok=True)
         res.trace_path, res.episode_log = str(TRACE_DIR / f"{run_id}.jsonl"), str(TRACE_DIR / f"{run_id}.env.jsonl")
         self._log(res, "start", goal=goal, mode=self.mode, seed=seed, slip=self.slip,
