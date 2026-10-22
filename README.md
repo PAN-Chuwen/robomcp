@@ -25,7 +25,9 @@ sim.py      skills (pick / place) → inverse kinematics (mink) → MuJoCo physi
   - `plan`: a planner sub-agent first checks feasibility (e.g. the object does not exist) and writes steps, then execute + verify.
 - **Eval** (`src/robomcp/agent/tasks.py`, `cli.py`): 5 tasks: one simple, two multi-step (one of them with a "don't move the blue cube" constraint), one reasoning ("the cube farthest from the tray"), and a trap that asks for a cube that does not exist. Success is decided by code from the scene state, never by the model's own claim.
 - **Failure injection**: with probability `--slip`, a placed cube bounces out of the tray while the skill still reports success. `--slip-mode immediate` makes this visible in the tool result; `--slip-mode delayed` applies it after the tool returns, so the tool result is stale (like perception lag on a real robot).
-- **Replay** (`robomcp-agent replay`): every trace logs each robot call with its full result. Replay re-runs the calls on a fresh simulator with the same seed and failure injection, checks each result against the log (MuJoCo is deterministic, so any difference means the run is not reproducible and the first divergent step is reported), re-applies the eval check, and writes a static viewer: frames, plan, tool calls and verdicts on one timeline.
+- **Observation vs ground truth**: tools return observations (perceived positions through a `Perception` seam, oracle for now, plus proprioception; grasp success comes from the gripper joint, not from truth). The environment writes its own episode log with the observation and the ground truth of every call; scoring and replay read it, so an agent never sees or reports the truth it is scored on.
+- **Safety gate** (`src/robomcp/safety.py`): `move_to` / `place_at` coordinates are checked against the workspace, table clearance and a base keep-out before anything moves; blocked commands return `blocked: true`.
+- **Replay** (`robomcp-agent replay`): re-runs the episode log's calls on a fresh simulator with the same seed and failure injection, checks each observation and truth against the log (MuJoCo is deterministic, so any difference means the run is not reproducible and the first divergent step is reported), re-applies the eval check, and writes a static viewer: frames, plan, tool calls and verdicts on one timeline.
 - **Web console** (`robomcp-agent console`): type a task, watch the arm live (MJPEG stream), and see the plan, every tool call, and the verifier's verdict.
 - `examples/`: the same agent loop before and after function calling (regex parsing vs. structured tool calls).
 
@@ -35,11 +37,11 @@ Gemini Flash, 5 tasks × 2 seeds = 10 runs per mode. Tokens and seconds are aver
 
 | Environment | bare | verify | plan |
 |---|---|---|---|
-| Ideal (no failures) | 10/10 · 7.5k tok · 10 s | 10/10 · 8.5k · 15 s | 10/10 · 8.1k · 15 s |
+| Ideal (no failures) | 10/10 · 7.4k tok · 12 s | 10/10 · 8.1k · 13 s | 10/10 · 8.1k · 16 s |
 | Delayed silent failure (p = 0.5), verifier v1 | 5/10 | 7/10 | 8/10 |
-| Delayed silent failure (p = 0.5), verifier v2 | **5/10** · 9.5k · 13 s | **10/10** · 33.9k · 32 s | **10/10** · 48.6k · 43 s |
+| Delayed silent failure (p = 0.5), verifier v2 | **6/10** · 13.7k · 16 s | **10/10** · 31.9k · 32 s | **10/10** · 35.9k · 37 s |
 
-Verifier v1 row: 2026-10-20. Other rows: 2026-10-22, after cubes were given collisions and tray slots (on 10-20, before that change, verifier v2 scored bare 6/10, verify 10/10, plan 10/10).
+Verifier v1 row: 2026-10-20. Other rows: 2026-10-22, after the observation/truth split: the agent and the verifier see observations only, and success is scored from the ground truth in the environment's episode log. Perception is still the oracle, so observations differ from truth only in `holding` (a bool instead of the object's name); unchanged scores are expected. An earlier run the same day, before the split, gave bare 5/10: with 10 runs per mode a one-run difference is within noise.
 
 What the numbers say:
 

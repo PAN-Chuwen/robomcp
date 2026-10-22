@@ -107,6 +107,15 @@ sim worker 每个 episode 一个进程，环境通过 MCP 对外，外部 agent 
   - 回放时先把日志挂载断开，再重跑。
 - **证据**：commits `5eb3033`、`54b0995`；`tests/test_replay.py::test_episode_log_hides_truth_from_observation`；真实 verify 运行 14/14 步复现。
 
+### 10. 分离之后的评测：分数没变，这是对的
+
+- **动机**：按项目规则，改了工具或 harness 就要在理想和 delayed 两种设置下重跑评测，并照实报告。
+- **结果**（Gemini Flash，5 任务 × 2 种子）：理想环境三种模式都是 10/10；delayed（p = 0.5）下 bare 6/10，verify 10/10，plan 10/10。
+- **解读**：
+  - 感知还是 oracle，观测和真值只差在 `holding` 的粒度上，所以分数不该变。分离的价值是结构上的：M4 换成真实检测器以后，感知误差才会进入分数。
+  - 同样的种子，同一天早些时候 bare 是 5/10。每组 10 次，差一次就在噪声范围内。这是 M2 / M5 要做配对比较和 pass^k 的直接理由。
+- **证据**：`out/eval-20261022-163223-slip0.0-immediate.json`、`out/eval-20261022-163225-slip0.5-delayed.json`（本地运行产物）；README 结果表。
+
 ## 面试可能问到的
 
 - **为什么不让 LLM 直接控制关节？** 见第 1 条。分层（System 2 规划 + System 1 执行）也是业界主流（Gemini Robotics-ER + VLA、π0.5、GR00T N1）。
