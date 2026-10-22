@@ -116,6 +116,22 @@ sim worker 每个 episode 一个进程，环境通过 MCP 对外，外部 agent 
   - 同样的种子，同一天早些时候 bare 是 5/10。每组 10 次，差一次就在噪声范围内。这是 M2 / M5 要做配对比较和 pass^k 的直接理由。
 - **证据**：`out/eval-20261022-163223-slip0.0-immediate.json`、`out/eval-20261022-163225-slip0.5-delayed.json`（本地运行产物）；README 结果表。
 
+### 11. 平台骨架（M1）：用 Postgres 做任务队列和多租户
+
+- **动机**：SaaS 需要把实验拆成 episode 分给 worker 跑，并且租户之间要隔离；不想为此多运维一个 Redis。
+- **设计**：
+  - 队列：episodes 表就是队列，worker 用 `SELECT … FOR UPDATE SKIP LOCKED LIMIT 1` 领任务，同一个 episode 不会被两个 worker 同时领到。
+  - 运行中定时写心跳；reaper 把心跳过期的 episode 放回队列，超过最大尝试次数就标为 `error`，不计入评分样本。
+  - worker 只能在 `claimed_by = 自己 AND status = 'running'` 时写回结果，被 reaper 回收后迟到的结果会被丢弃。
+  - 多租户：每张表带 `org_id`，子表用 `(org_id, parent_id)` 复合外键指向父表，数据库本身就拒绝跨租户引用，不只靠应用层过滤。
+  - 版本不可变：suite_versions 和 agent_versions 有触发器禁止 UPDATE；内容 hash 相同的版本直接复用（接口返回 200 而不是 201）。
+- **测试抓到的 3 个 bug**：
+  - 并发领任务卡死：领到 episode 后还要把 experiment 标成 running，第二个 worker 会在 experiment 的行锁上等第一个 worker 的事务结束。"跳过被锁住的行"的测试因此挂住。修法是这一步也用 `SKIP LOCKED`：别的领取者已经在做同一件事了，不用等。
+  - 心跳线程类里定义的 `self._stop` 覆盖了 `threading.Thread._stop`，导致 `join()` 崩溃。worker 主循环把异常记进日志后继续运行，把问题藏住了；是集成测试暴露出来的。
+  - 浮点误差让 Wilson 区间在 0/n 时下界是 5.6e-17，而不是 0；在边界上改成返回精确值。
+- **还没做**：行级安全（RLS），因为它需要先定几件事：API 用的非 owner 数据库角色、worker 跨租户读取的权限、在知道 org 之前怎么查 API key；真正的 `HarnessRunner`；对象存储上传。都列在 `development.md` 里。
+- **证据**：`packages/platform/tests/integration/`，48 个测试跑在真实 Postgres 16 上，测试库每个会话新建、结束后删除；commits `61579a8`、`9c988c7`、`be7fef5`。
+
 ## 面试可能问到的
 
 - **为什么不让 LLM 直接控制关节？** 见第 1 条。分层（System 2 规划 + System 1 执行）也是业界主流（Gemini Robotics-ER + VLA、π0.5、GR00T N1）。
