@@ -6,7 +6,9 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from robomcp_platform.runner import resolve_task
 
 NAME = Field(min_length=1, max_length=200)
 
@@ -35,12 +37,30 @@ class ProjectOut(Orm):
     created_at: datetime
 
 
+class Perturbations(BaseModel):
+    """Environment failure injection for a task (belongs to the scenario, not the agent)."""
+
+    model_config = ConfigDict(extra="forbid")
+    slip: float = Field(default=0.0, ge=0.0, le=1.0, description="probability a placed object bounces out")
+    slip_mode: Literal["immediate", "delayed"] = "immediate"
+
+
 class TaskSpec(BaseModel):
-    """A task in a suite. `key` identifies it within the suite; other fields pass through to the runner."""
+    """A task in a suite. `key` identifies it within the suite; other fields pass through to the runner.
+
+    Validated here so a bad suite fails at creation, not in a worker that would retry it max_attempts times.
+    """
 
     model_config = ConfigDict(extra="allow")
     key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9_.\-]+$")
     goal: str | None = None
+    check: str | None = Field(default=None, description="built-in scene check; defaults to `key`")
+    perturbations: Perturbations | None = None
+
+    @model_validator(mode="after")
+    def _known_check(self) -> TaskSpec:
+        resolve_task({"key": self.key, **({"check": self.check} if self.check else {})})
+        return self
 
 
 class SuiteVersionCreate(BaseModel):
@@ -68,6 +88,16 @@ class SuiteVersionOut(Orm):
 class AgentVersionCreate(BaseModel):
     name: str = NAME
     config: dict[str, Any]
+
+    @field_validator("config")
+    @classmethod
+    def _harness_config(cls, config: dict[str, Any]) -> dict[str, Any]:
+        if config.get("mode", "plan") not in ("bare", "verify", "plan"):
+            raise ValueError("mode must be one of bare, verify, plan")
+        for key in ("max_turns", "max_verify"):
+            if key in config and not (isinstance(config[key], int) and config[key] >= 1):
+                raise ValueError(f"{key} must be a positive integer")
+        return config
 
 
 class AgentVersionOut(Orm):
