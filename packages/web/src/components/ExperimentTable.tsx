@@ -45,12 +45,12 @@ export function ExperimentTable({ rows }: { rows: ExperimentRow[] }) {
           <tr>
             <th aria-label="Select for comparison" />
             <th>Experiment</th>
-            <th>Agent</th>
-            <th>Suite</th>
-            <th>Status</th>
             <th>Successes / scored · Wilson 95%</th>
             <th className="num">pass^1</th>
             <th className="num">pass^k</th>
+            <th>Agent</th>
+            <th>Suite</th>
+            <th>Status</th>
             <th>Created</th>
           </tr>
         </thead>
@@ -72,11 +72,6 @@ export function ExperimentTable({ rows }: { rows: ExperimentRow[] }) {
                   {r.name ?? shortId(r.id)}
                 </Link>
               </td>
-              <td>{r.agent}</td>
-              <td>{r.suite}</td>
-              <td>
-                <StatusBadge status={r.status} />
-              </td>
               <td>
                 <Tally successes={r.successes} scored={r.scored} rate={r.rate} wilson={r.wilson} />
                 {r.scored < r.episodes && <span className="ml-2 text-muted">of {r.episodes}</span>}
@@ -91,6 +86,11 @@ export function ExperimentTable({ rows }: { rows: ExperimentRow[] }) {
                 ) : (
                   "—"
                 )}
+              </td>
+              <td>{r.agent}</td>
+              <td>{r.suite}</td>
+              <td>
+                <StatusBadge status={r.status} />
               </td>
               <td>{formatDate(r.created_at)}</td>
             </tr>

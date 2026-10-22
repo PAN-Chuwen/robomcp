@@ -128,6 +128,7 @@ export default async function ExperimentPage({ params, searchParams }: PageProps
           <table className="tbl">
             <thead>
               <tr>
+                <th>Episode</th>
                 <th>Task</th>
                 <th className="num">Seed</th>
                 <th className="num">Repeat</th>
@@ -138,12 +139,17 @@ export default async function ExperimentPage({ params, searchParams }: PageProps
                   </th>
                 ))}
                 <th className="num">Attempts</th>
-                <th>Episode</th>
+                <th>Error</th>
               </tr>
             </thead>
             <tbody>
               {page.items.map((ep) => (
                 <tr key={ep.id}>
+                  <td>
+                    <Link href={`/episodes/${ep.id}`} className="link">
+                      {shortId(ep.id)}
+                    </Link>
+                  </td>
                   <td>{ep.task_key}</td>
                   <td className="num">{ep.seed}</td>
                   <td className="num">{ep.repeat_index}</td>
@@ -156,21 +162,14 @@ export default async function ExperimentPage({ params, searchParams }: PageProps
                     </td>
                   ))}
                   <td className="num">{ep.attempts}</td>
-                  <td>
-                    <Link href={`/episodes/${ep.id}`} className="link">
-                      replay {shortId(ep.id)}
-                    </Link>
-                    {ep.error && (
-                      <span className="ml-2 text-bad" title={ep.error}>
-                        {ep.error.slice(0, 60)}
-                      </span>
-                    )}
+                  <td className="text-bad" title={ep.error ?? undefined}>
+                    {ep.error?.slice(0, 60)}
                   </td>
                 </tr>
               ))}
               {page.items.length === 0 && (
                 <tr>
-                  <td colSpan={5 + METRICS.length + 1} className="text-muted">
+                  <td colSpan={7 + METRICS.length} className="text-muted">
                     No episodes{status ? ` with status ${status}` : ""}.
                   </td>
                 </tr>

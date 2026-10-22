@@ -82,7 +82,7 @@ export default async function ComparePage({ searchParams }: PageProps<"/compare"
         </p>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <section className="pane">
           <h2 className="pane-title">Paired outcomes</h2>
           <div className="overflow-x-auto">
@@ -121,9 +121,9 @@ export default async function ComparePage({ searchParams }: PageProps<"/compare"
                 <tr>
                   <th>Role</th>
                   <th>Experiment</th>
+                  <th>Successes / scored · Wilson 95%</th>
                   <th>Agent</th>
                   <th>Status</th>
-                  <th>Successes / scored · Wilson 95%</th>
                 </tr>
               </thead>
               <tbody>
@@ -141,13 +141,13 @@ export default async function ComparePage({ searchParams }: PageProps<"/compare"
                           {name(x)}
                         </Link>
                       </td>
-                      <td>{label.agent(x.agent_version_id)}</td>
-                      <td>
-                        <StatusBadge status={x.status} />
-                      </td>
                       <td>
                         <Tally successes={x.results.successes} scored={x.results.scored}
                           rate={x.results.success_rate ?? null} wilson={x.results.wilson_95} />
+                      </td>
+                      <td>{label.agent(x.agent_version_id)}</td>
+                      <td>
+                        <StatusBadge status={x.status} />
                       </td>
                     </tr>
                   );
