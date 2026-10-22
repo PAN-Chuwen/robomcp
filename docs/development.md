@@ -4,7 +4,6 @@ Active work only; see `docs/platform-plan.md` for the plan.
 
 ## M0: honest environment
 
-- [ ] Grasp success from gripper opening, not ground truth
 - [ ] Safety gate on move/place targets; blocked actions counted
 - [ ] Observation/truth split: tools return observations, the environment records ground truth itself
 - [ ] Environment fingerprint (model-file hash + MuJoCo version) in traces

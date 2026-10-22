@@ -19,6 +19,8 @@ ARM_JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wris
 GRIPPER_OPEN = 1.2
 GRIPPER_CLOSED = -0.17
 GRIPPER_RELEASE = 0.3  # partial opening used to let go of a placed object
+# Closing on a 24 mm cube stalls the jaw near +0.08 rad; on nothing it reaches GRIPPER_CLOSED (scripts/probe_gripper.py).
+GRIPPER_HOLDING_MIN = GRIPPER_CLOSED + 0.1
 HOME_Q = np.array([0.0, -1.2, 1.1, 1.3, 0.0])
 APPROACH_HEIGHT = 0.07  # hover height above a target before descending
 TRAY_NAME = "tray"
@@ -121,7 +123,12 @@ class TabletopSim:
     def tip_position(self) -> np.ndarray:
         return self.data.site_xpos[self.model.site(self._site).id].copy()
 
+    def gripper_holding(self) -> bool:
+        """Proprioceptive grasp signal: a closed jaw that stalled before fully closing is holding something."""
+        return bool(self.data.ctrl[5] == GRIPPER_CLOSED and self.data.qpos[self._grip_qadr] > GRIPPER_HOLDING_MIN)
+
     def held_object(self) -> str | None:
+        """Ground truth: which object is in the gripper."""
         tip = self.tip_position()
         for n in self.objects:
             p = self.data.xpos[self.model.body(n).id]
@@ -221,18 +228,21 @@ class TabletopSim:
         state = self.object_state(name)
         if state.in_tray:
             raise SkillError(f"{name} is already in the tray")
-        held = self.held_object()
-        if held:
-            raise SkillError(f"gripper is already holding {held}; place it first")
+        if self.gripper_holding():
+            raise SkillError("gripper is already holding an object; place it first")
         x, y, z = state.position
         self.set_gripper(True)
         self.move_to(x, y, z + APPROACH_HEIGHT)
         self.move_to(x, y, z + 0.002, duration=0.8)
         self.set_gripper(False)
         self.move_to(x, y, z + APPROACH_HEIGHT, duration=0.8)
-        return self.held_object() == name
+        if not self.gripper_holding():
+            raise SkillError(f"grasp missed: the gripper closed fully at {name}'s position, nothing is held")
+        return True
 
     def place(self, x: float, y: float, release_z: float = TABLE_RELEASE_Z) -> None:
+        if not self.gripper_holding():
+            raise SkillError("place needs an object in the gripper; pick one first")
         held = self.held_object()
         self.move_to(x, y, 0.012 + APPROACH_HEIGHT)
         if held:
@@ -246,7 +256,7 @@ class TabletopSim:
         self.set_gripper(True, opening=GRIPPER_RELEASE)
         self.move_to(x, y, 0.012 + APPROACH_HEIGHT, duration=0.6)
         if held is None:
-            raise SkillError("place executed with an empty gripper")
+            return
         if self.slip and self._rng.random() < self.slip:
             if self.slip_mode == "delayed":
                 self._pending_bounce = held
