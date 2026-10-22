@@ -30,7 +30,7 @@ async def _eval(modes: list[str], seeds: list[int], keys: list[str] | None, slip
                 try:
                     res = await harness.run(task.goal, seed=seed)
                     u = harness.llm.usage
-                    row.update(success=task.check(res.scene_before, res.scene_after), error=None,
+                    row.update(success=task.check(res.truth_before, res.truth_after), error=None,
                                tool_calls=res.tool_calls, model_calls=u.calls, prompt_tokens=u.prompt,
                                cache_hit=u.cache_hit, seconds=res.seconds, trace=res.trace_path)
                 except Exception as e:  # network hiccups etc.: record and keep going

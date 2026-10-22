@@ -22,9 +22,10 @@ from mcp.client.stdio import StdioServerParameters
 from robomcp.agent.llm import LLM, PROJECT_ROOT, Usage, mcp_to_openai_tools
 
 TRACE_DIR = PROJECT_ROOT / "out" / "traces"
-# v2: every robot call is logged with its full result (executor calls as "tool", the harness's own as
-# "harness_call"), so a run can be replayed in the simulator and checked step by step (robomcp.replay).
-TRACE_VERSION = 2
+# v3: the trace holds the agent side (plan, tool calls, verdicts); each robot call carries the index of its step
+# in the environment's own episode log (<run>.env.jsonl: observation + ground truth per call), which is what
+# scoring and replay (robomcp.agent.replay) read.
+TRACE_VERSION = 3
 HIDDEN_TOOLS = {"look", "start_recording", "save_recording", "reset_scene"}  # harness-only or not text-model friendly
 
 EXECUTOR_PROMPT = """你控制一台桌面机械臂（MuJoCo 仿真）。坐标单位是米：+x 向前，+y 向左，z 向上，桌面 z=0。
@@ -48,8 +49,10 @@ VERIFIER_PROMPT = """你是校验者。对比执行前和执行后的场景，�
 LIVE_DIR = PROJECT_ROOT / "out" / "live"
 
 
-def _server_params(live: bool, slip: float = 0.0, slip_mode: str = "immediate") -> StdioServerParameters:
+def _server_params(episode_log: Path, live: bool, slip: float = 0.0,
+                   slip_mode: str = "immediate") -> StdioServerParameters:
     env = dict(os.environ)
+    env["ROBOMCP_EPISODE_LOG"] = str(episode_log)
     if live:
         env["ROBOMCP_LIVE_DIR"] = str(LIVE_DIR)
     env["ROBOMCP_SLIP"] = str(slip)
@@ -78,8 +81,12 @@ class RunResult:
     planner: dict | None = None
     seconds: float = 0.0
     trace_path: str = ""
-    scene_before: dict = field(default_factory=dict)
+    episode_log: str = ""
+    robot_steps: int = 0  # robot calls so far; the next call is this step of the episode log
+    scene_before: dict = field(default_factory=dict)  # what the agent saw
     scene_after: dict = field(default_factory=dict)
+    truth_before: dict = field(default_factory=dict)  # ground truth from the episode log, for scoring
+    truth_after: dict = field(default_factory=dict)
     events: list = field(default_factory=list)
 
 
@@ -138,17 +145,17 @@ class Harness:
     # ----------------------------------------------------------------- the loop
 
     async def _call(self, robot: Client, res: RunResult, name: str, args: dict, by: str = "harness") -> str:
-        """Call a robot tool and log it with the full result; `by` is "executor" or "harness"."""
+        """Call a robot tool and log it with its episode step; `by` is "executor" or "harness".
+
+        Every robot call must go through here: the step numbers tie the trace to the episode log.
+        """
         out = _text(await robot.call_tool(name, args))
-        try:
-            result = json.loads(out)
-        except json.JSONDecodeError:
-            result = out
+        step, res.robot_steps = res.robot_steps, res.robot_steps + 1
         if by == "executor":
-            self._log(res, "tool", name=name, args=args, summary=self._summary(out), result=result)
+            self._log(res, "tool", name=name, args=args, summary=self._summary(out), step=step)
         else:
             res.events.append({"t": round(time.time(), 3), "kind": "harness_call", "name": name, "args": args,
-                               "result": result})
+                               "step": step})
         return out
 
     async def _executor(self, robot: Client, tools: list[dict], messages: list[dict], res: RunResult) -> str:
@@ -169,23 +176,29 @@ class Harness:
         res = RunResult(goal=goal, mode=self.mode)
         self.llm.usage = Usage()
         t0 = time.time()
+        run_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{self.mode}"
+        TRACE_DIR.mkdir(parents=True, exist_ok=True)
+        res.trace_path, res.episode_log = str(TRACE_DIR / f"{run_id}.jsonl"), str(TRACE_DIR / f"{run_id}.env.jsonl")
         self._log(res, "start", goal=goal, mode=self.mode, seed=seed, slip=self.slip,
-                  slip_mode=self.slip_mode, trace_version=TRACE_VERSION, mujoco=mujoco.__version__,
-                  model=self.llm.model)
-        async with Client(_server_params(self.live, self.slip, self.slip_mode)) as robot:
+                  slip_mode=self.slip_mode, trace_version=TRACE_VERSION, episode_log=Path(res.episode_log).name,
+                  mujoco=mujoco.__version__, model=self.llm.model)
+        async with Client(_server_params(Path(res.episode_log), self.live, self.slip, self.slip_mode)) as robot:
             tools = mcp_to_openai_tools((await robot.list_tools()).tools, HIDDEN_TOOLS)
             await self._call(robot, res, "reset_scene", {"seed": seed} if seed is not None else {})
             if record:
                 await self._call(robot, res, "start_recording", {})
             scene = await self._call(robot, res, "get_scene", {})
-            res.scene_before = json.loads(scene)
+            res.scene_before, before = json.loads(scene), res.robot_steps - 1
 
             await self._solve(robot, tools, goal, scene, res)
 
-            res.scene_after = json.loads(await self._call(robot, res, "get_scene", {}))
+            res.scene_after, after = json.loads(await self._call(robot, res, "get_scene", {})), res.robot_steps - 1
             if record:
                 saved = await self._call(robot, res, "save_recording", {"filename": record})
                 self._log(res, "recording", info=saved)
+        steps = [r for r in map(json.loads, Path(res.episode_log).read_text().splitlines()) if r["kind"] == "step"]
+        res.truth_before, res.truth_after = steps[before]["truth"], steps[after]["truth"]
+        self._log(res, "scored_steps", before=before, after=after)
         return self._finish(res, t0)
 
     async def _solve(self, robot: Client, tools: list[dict], goal: str, scene: str, res: RunResult) -> None:
@@ -218,11 +231,8 @@ class Harness:
         u = self.llm.usage
         self._log(res, "done", final=res.final_text, tool_calls=res.tool_calls, seconds=res.seconds,
                   model_calls=u.calls, prompt_tokens=u.prompt, cache_hit_rate=round(u.hit_rate, 3))
-        TRACE_DIR.mkdir(parents=True, exist_ok=True)
-        path = TRACE_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}-{res.mode}.jsonl"
-        with path.open("w") as f:
+        with Path(res.trace_path).open("w") as f:
             for e in res.events:
                 f.write(json.dumps(e, ensure_ascii=False) + "\n")
-        res.trace_path = str(path)
         return res
 
