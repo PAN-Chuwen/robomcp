@@ -12,6 +12,8 @@ robomcp/
 ├── examples/
 │   ├── loop_before_function_calling.py   # agent loop with regex-parsed text actions (offline demo)
 │   └── loop_with_function_calling.py     # same loop with structured tool calls
+├── tests/
+│   └── test_replay.py              # replay reproduces scripted runs, flags the first divergent step
 └── src/robomcp/
     ├── sim.py                      # TabletopSim: scene state, mink IK, pick/place skills, rendering,
     │                               #   live frames, real-time pacing, failure injection (slip)
@@ -21,12 +23,14 @@ robomcp/
         ├── llm.py                  # OpenAI-compatible client (DeepSeek / Gemini), token + cache accounting
         ├── harness.py              # Harness: executor loop, planner and verifier sub-agents, traces
         ├── tasks.py                # eval tasks with scene-based success checks
-        ├── cli.py                  # robomcp-agent run | eval | console
+        ├── replay.py               # re-run a v2 trace on a fresh sim, compare each step, write viewer
+        ├── replay.html             # static replay viewer (frames + timeline + per-step check)
+        ├── cli.py                  # robomcp-agent run | eval | replay | console
         ├── console.py              # web console server (MJPEG stream, events, POST /run)
         └── console.html            # console page
 ```
 
-Runtime output goes to `out/` (gitignored): `out/traces/*.jsonl`, `out/eval-*.json`, `out/live/frame.jpg`.
+Runtime output goes to `out/` (gitignored): `out/traces/*.jsonl`, `out/eval-*.json`, `out/live/frame.jpg`, `out/replays/<trace>/`.
 
 ## Tech stack
 
@@ -39,7 +43,9 @@ uv sync
 uv run robomcp-server                                   # MCP server over stdio
 uv run robomcp-agent run "把红色方块放进托盘" --mode plan --seed 1 --slip 0.5 --slip-mode delayed
 uv run robomcp-agent eval --modes bare,verify,plan --seeds 1,2 [--slip 0.5 --slip-mode delayed]
+uv run robomcp-agent replay out/traces/<run>.jsonl      # exit 1 if any step diverges from the log
 uv run robomcp-agent console                            # http://127.0.0.1:8765
+uv run pytest
 ```
 
 API key: `DEEPSEEK_API_KEY` or `GEMINI_API_KEY` in `.env` (gitignored); on macOS the Gemini key can also come from the Keychain service `gemini-api-key`. `LLM_PROVIDER` / `LLM_MODEL` override the defaults.
@@ -59,6 +65,7 @@ API key: `DEEPSEEK_API_KEY` or `GEMINI_API_KEY` in `.env` (gitignored); on macOS
 
 ## Notes for AI assistants
 
+- Traces are v2 (`trace_version` in the start event): every robot call is logged with its full result, harness-internal calls as `harness_call`. Any new robot call in the harness must go through `Harness._call`, or replays stop reproducing.
 - MuJoCo rendering must run on the main thread: keep MCP tools `async`. Sync tools run in worker threads and rendering hangs.
 - MCP SDK v2 exposes tool schemas as `input_schema` (not `inputSchema`).
 - `reset(seed)` seeds the failure-injection RNG; same seed + same actions reproduce the same failures (seed 1 slips on the first placement — used for demos).

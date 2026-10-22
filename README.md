@@ -25,6 +25,7 @@ sim.py      skills (pick / place) → inverse kinematics (mink) → MuJoCo physi
   - `plan`: a planner sub-agent first checks feasibility (e.g. the object does not exist) and writes steps, then execute + verify.
 - **Eval** (`src/robomcp/agent/tasks.py`, `cli.py`): 5 tasks: one simple, two multi-step (one of them with a "don't move the blue cube" constraint), one reasoning ("the cube farthest from the tray"), and a trap that asks for a cube that does not exist. Success is decided by code from the scene state, never by the model's own claim.
 - **Failure injection**: with probability `--slip`, a placed cube bounces out of the tray while the skill still reports success. `--slip-mode immediate` makes this visible in the tool result; `--slip-mode delayed` applies it after the tool returns, so the tool result is stale (like perception lag on a real robot).
+- **Replay** (`robomcp-agent replay`): every trace logs each robot call with its full result. Replay re-runs the calls on a fresh simulator with the same seed and failure injection, checks each result against the log (MuJoCo is deterministic, so any difference means the run is not reproducible and the first divergent step is reported), re-applies the eval check, and writes a static viewer: frames, plan, tool calls and verdicts on one timeline.
 - **Web console** (`robomcp-agent console`): type a task, watch the arm live (MJPEG stream), and see the plan, every tool call, and the verifier's verdict.
 - `examples/`: the same agent loop before and after function calling (regex parsing vs. structured tool calls).
 
@@ -63,6 +64,9 @@ uv run robomcp-agent run "把红色方块放进托盘" --mode plan --seed 1 --sl
 # Eval
 uv run robomcp-agent eval --modes bare,verify,plan --seeds 1,2
 uv run robomcp-agent eval --modes bare,verify,plan --seeds 1,2 --slip 0.5 --slip-mode delayed
+
+# Replay a run: step-by-step reproducibility check + viewer at out/replays/<run>/index.html
+uv run robomcp-agent replay out/traces/<run>.jsonl
 
 # Web console at http://127.0.0.1:8765
 uv run robomcp-agent console
