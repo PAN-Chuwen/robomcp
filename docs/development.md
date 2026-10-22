@@ -7,7 +7,6 @@ Active work only; see `docs/platform-plan.md` for the plan.
 - [ ] Postgres row-level security on every tenant table (`org_id = current_setting('app.org_id')`), with the API
       connecting as a non-owner role and setting `app.org_id` per transaction
 - [ ] Enforce roles (owner / admin / member) and add API-key management endpoints (list, create, revoke)
-- [ ] Read endpoints still missing: list experiments per project, get / list suite and agent versions
 - [ ] Episode fingerprint columns (image digest + the episode log's `fingerprint`: model / code hash, MuJoCo version)
 - [ ] Experiment cancellation; worker aborts the runner when its heartbeat reports a lost claim (it currently
       finishes the episode and drops the result)
