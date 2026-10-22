@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+/* Palette and type of the console / replay pages (src/robomcp/agent/replay.html), plus a light variant. */
+:root {
+  --bg: #0f1413;
+  --panel: #172020;
+  --line: #26302f;
+  --fg: #e4ece9;
+  --muted: #8fa19b;
+  --accent: #6fcfb0;
+  --model: #9db4ea;
+  --tool: #e2b071;
+  --bad: #ef8a7e;
+  --good: #7fd6a2;
+  --hover: rgba(255, 255, 255, 0.04);
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --body: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f7f6;
+    --panel: #ffffff;
+    --line: #d6dfdc;
+    --fg: #16201e;
+    --muted: #5d6e69;
+    --accent: #13805f;
+    --model: #3657a8;
+    --tool: #9a5a08;
+    --bad: #c0392b;
+    --good: #1d7f48;
+    --hover: rgba(0, 0, 0, 0.035);
+    color-scheme: light;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-model: var(--model);
+  --color-tool: var(--tool);
+  --color-bad: var(--bad);
+  --color-good: var(--good);
+  --color-hover: var(--hover);
+  --font-sans: var(--body);
+  --font-mono: var(--mono);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  font: 14px/1.55 var(--body);
+}
+
+a {
+  color: inherit;
+}
+
+@layer components {
+  .pane {
+    @apply min-w-0 rounded-[10px] border border-line bg-panel;
+  }
+  .pane-title {
+    @apply flex flex-wrap items-center justify-between gap-2 border-b border-line px-3.5 py-2.5 text-xs font-medium tracking-[0.08em] text-muted uppercase;
+  }
+  .tbl {
+    @apply w-full border-collapse font-mono text-[12.5px] leading-normal;
+  }
+  .tbl th,
+  .tbl td {
+    @apply border-t border-line px-3 py-1.5 text-left align-middle whitespace-nowrap;
+  }
+  .tbl th {
+    @apply font-medium text-muted;
+  }
+  .tbl td.num,
+  .tbl th.num {
+    @apply text-right tabular-nums;
+  }
+  .tbl tbody tr:hover {
+    @apply bg-hover;
+  }
+  .link {
+    @apply text-accent underline-offset-2 hover:underline;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full border border-line px-2.5 py-px text-xs whitespace-nowrap;
+  }
+  .btn {
+    @apply inline-flex cursor-pointer items-center gap-1 rounded-md border border-line bg-bg px-2.5 py-1 text-[13px] text-fg hover:border-muted disabled:cursor-default disabled:opacity-40;
+  }
+  .meta {
+    @apply font-mono text-[12.5px] text-muted [overflow-wrap:anywhere];
+  }
+}
