@@ -29,6 +29,6 @@ markers = ["integration: needs a Postgres server (creates and drops a throwaway 
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
+    "httpx2>=2.13.1",
     "pytest>=9.1.1",
 ]
