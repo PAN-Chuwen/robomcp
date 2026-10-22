@@ -19,6 +19,10 @@ class ArtifactStore(Protocol):
         """Store the file at `path` under `key` and return its URI."""
         ...
 
+    def get(self, uri: str) -> bytes:
+        """Contents of an artifact this store wrote."""
+        ...
+
 
 class LocalStore:
     def __init__(self, root: Path):
@@ -29,6 +33,12 @@ class LocalStore:
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, dest)
         return dest.as_uri()
+
+    def get(self, uri: str) -> bytes:
+        path = Path(uri.removeprefix("file://")).resolve()
+        if not path.is_relative_to(self.root):  # URIs come from the DB; never read outside the store
+            raise ValueError(f"{uri} is outside the artifact directory")
+        return path.read_bytes()
 
 
 class S3Store:
@@ -57,6 +67,12 @@ class S3Store:
         self._ensure_bucket()
         self.client.upload_file(str(path), self.bucket, key)
         return f"s3://{self.bucket}/{key}"
+
+    def get(self, uri: str) -> bytes:
+        bucket, _, key = uri.removeprefix("s3://").partition("/")
+        if bucket != self.bucket:
+            raise ValueError(f"{uri} is not in bucket {self.bucket}")
+        return self.client.get_object(Bucket=bucket, Key=key)["Body"].read()
 
 
 def make_store(settings: Settings) -> ArtifactStore:

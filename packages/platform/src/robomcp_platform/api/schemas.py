@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -111,8 +111,37 @@ class TaskTally(Tally):
     task_key: str
 
 
+class PassK(BaseModel):
+    k: int
+    value: float = Field(description="mean over (task, seed) groups of C(c, k) / C(n, k)")
+    groups: int
+
+
 class Results(Tally):
     per_task: list[TaskTally]
+    pass_k: list[PassK]
+
+
+class PairCounts(BaseModel):
+    both: int
+    only_baseline: int
+    only_candidate: int
+    neither: int
+
+
+class TaskComparison(PairCounts):
+    task_key: str
+
+
+class ComparisonOut(PairCounts):
+    baseline_id: uuid.UUID
+    candidate_id: uuid.UUID
+    same_suite_version: bool = Field(description="pairs are only like-for-like when both ran the same tasks")
+    pairs: int
+    unpaired: int = Field(description="(task, seed, repeat) cells scored in only one of the two experiments")
+    p_value: float = Field(description="two-sided exact McNemar on the discordant pairs")
+    verdict: Literal["regression", "improvement", "no_significant_difference"]
+    per_task: list[TaskComparison]
 
 
 class ExperimentOut(Orm):

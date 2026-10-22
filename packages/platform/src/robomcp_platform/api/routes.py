@@ -6,6 +6,7 @@ import uuid
 from typing import Annotated, TypeVar
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -14,6 +15,7 @@ from robomcp_platform.api.deps import PrincipalDep, SessionDep
 from robomcp_platform.api.schemas import (
     AgentVersionCreate,
     AgentVersionOut,
+    ComparisonOut,
     EpisodeOut,
     EpisodePage,
     ExperimentCreate,
@@ -73,6 +75,36 @@ def create_project(body: ProjectCreate, session: SessionDep, p: PrincipalDep) ->
 @router.get("/projects", response_model=list[ProjectOut])
 def list_projects(session: SessionDep, p: PrincipalDep) -> list[Project]:
     return list(session.scalars(select(Project).where(Project.org_id == p.org_id).order_by(Project.created_at)))
+
+
+@router.get("/projects/{project_id}", response_model=ProjectOut)
+def get_project(project_id: uuid.UUID, session: SessionDep, p: PrincipalDep) -> Project:
+    return _scoped(session, Project, project_id, p.org_id)
+
+
+@router.get("/projects/{project_id}/experiments", response_model=list[ExperimentOut])
+def list_experiments(project_id: uuid.UUID, session: SessionDep, p: PrincipalDep,
+                     limit: Annotated[int, Query(ge=1, le=200)] = 50) -> list[ExperimentOut]:
+    project = _scoped(session, Project, project_id, p.org_id)
+    rows = session.scalars(select(Experiment).where(Experiment.project_id == project.id)
+                           .order_by(Experiment.created_at.desc()).limit(limit))
+    return [_experiment_out(session, e) for e in rows]
+
+
+@router.get("/projects/{project_id}/suite-versions", response_model=list[SuiteVersionOut])
+def list_suite_versions(project_id: uuid.UUID, session: SessionDep, p: PrincipalDep) -> list[SuiteVersionOut]:
+    project = _scoped(session, Project, project_id, p.org_id)
+    rows = session.execute(select(SuiteVersion, Suite).join(Suite, Suite.id == SuiteVersion.suite_id)
+                           .where(Suite.project_id == project.id).order_by(Suite.name, SuiteVersion.version))
+    return [SuiteVersionOut(id=v.id, suite_id=su.id, suite_name=su.name, version=v.version,
+                            content_hash=v.content_hash, tasks=v.tasks, created_at=v.created_at) for v, su in rows]
+
+
+@router.get("/projects/{project_id}/agent-versions", response_model=list[AgentVersionOut])
+def list_agent_versions(project_id: uuid.UUID, session: SessionDep, p: PrincipalDep) -> list[AgentVersion]:
+    project = _scoped(session, Project, project_id, p.org_id)
+    return list(session.scalars(select(AgentVersion).where(AgentVersion.project_id == project.id)
+                                .order_by(AgentVersion.name, AgentVersion.version)))
 
 
 # --- immutable versions ---------------------------------------------------------------------------------
@@ -178,6 +210,18 @@ def create_experiment(body: ExperimentCreate, request: Request, session: Session
     return _experiment_out(session, experiment)
 
 
+@router.get("/experiments/compare", response_model=ComparisonOut)
+def compare_experiments(baseline: uuid.UUID, candidate: uuid.UUID, session: SessionDep,
+                        p: PrincipalDep) -> ComparisonOut:
+    a = _scoped(session, Experiment, baseline, p.org_id)
+    b = _scoped(session, Experiment, candidate, p.org_id)
+    if a.project_id != b.project_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "experiments belong to different projects")
+    return ComparisonOut(baseline_id=a.id, candidate_id=b.id,
+                         same_suite_version=a.suite_version_id == b.suite_version_id,
+                         **results.compare(session, a.id, b.id))
+
+
 @router.get("/experiments/{experiment_id}", response_model=ExperimentOut)
 def get_experiment(experiment_id: uuid.UUID, session: SessionDep, p: PrincipalDep) -> ExperimentOut:
     return _experiment_out(session, _scoped(session, Experiment, experiment_id, p.org_id))
@@ -202,3 +246,25 @@ def list_episodes(
         .order_by(Episode.task_key, Episode.seed, Episode.repeat_index).limit(limit).offset(offset)
     ).all()
     return EpisodePage(items=[EpisodeOut.model_validate(e) for e in items], total=total, limit=limit, offset=offset)
+
+
+# --- episodes -------------------------------------------------------------------------------------------
+
+
+@router.get("/episodes/{episode_id}", response_model=EpisodeOut)
+def get_episode(episode_id: uuid.UUID, session: SessionDep, p: PrincipalDep) -> Episode:
+    return _scoped(session, Episode, episode_id, p.org_id)
+
+
+@router.get("/episodes/{episode_id}/artifacts/{kind}", response_class=PlainTextResponse,
+            responses={200: {"content": {"application/x-ndjson": {}}, "description": "JSON lines"}})
+def get_episode_artifact(
+    episode_id: uuid.UUID, kind: Annotated[str, Path(pattern="^(trace|episode_log)$")],
+    request: Request, session: SessionDep, p: PrincipalDep,
+) -> Response:
+    """The episode's trace or episode log, streamed through the API so access follows the caller's org."""
+    episode = _scoped(session, Episode, episode_id, p.org_id)
+    uri = episode.trace_uri if kind == "trace" else episode.episode_log_uri
+    if not uri:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"episode has no {kind}")
+    return Response(request.app.state.store.get(uri), media_type="application/x-ndjson")
