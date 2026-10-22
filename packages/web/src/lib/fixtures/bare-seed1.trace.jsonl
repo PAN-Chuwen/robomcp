@@ -1,0 +1,10 @@
+{"t": 1792659738.159, "kind": "start", "goal": "把红色方块放进托盘", "mode": "bare", "seed": 1, "slip": 0.5, "slip_mode": "delayed", "trace_version": 3, "episode_log": "20261022-170218-bare-843fdb.env.jsonl", "mujoco": "3.15.0", "model": "gemini-flash-latest"}
+{"t": 1792659738.774, "kind": "harness_call", "name": "reset_scene", "args": {"seed": 1}, "step": 0}
+{"t": 1792659738.775, "kind": "harness_call", "name": "get_scene", "args": {}, "step": 1}
+{"t": 1792659740.609, "kind": "tool", "name": "get_scene", "args": {}, "summary": "场景已读取", "step": 2}
+{"t": 1792659742.954, "kind": "tool", "name": "pick", "args": {"object_name": "red_cube"}, "summary": "ok=True done", "step": 3}
+{"t": 1792659746.028, "kind": "tool", "name": "place_in_tray", "args": {}, "summary": "ok=True done", "step": 4}
+{"t": 1792659747.969, "kind": "say", "text": "已成功将红色方块抓取并放入托盘中。"}
+{"t": 1792659747.976, "kind": "harness_call", "name": "get_scene", "args": {}, "step": 5}
+{"t": 1792659748.132, "kind": "scored_steps", "before": 1, "after": 5}
+{"t": 1792659748.132, "kind": "done", "final": "已成功将红色方块抓取并放入托盘中。", "tool_calls": 3, "seconds": 10.0, "model_calls": 4, "prompt_tokens": 5370, "cache_hit_rate": 0.0}
