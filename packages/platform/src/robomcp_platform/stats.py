@@ -26,3 +26,27 @@ def wilson_interval(successes: int, n: int, z: float = Z_95) -> tuple[float, flo
     lo = 0.0 if successes == 0 else max(0.0, centre - half)
     hi = 1.0 if successes == n else min(1.0, centre + half)
     return lo, hi
+
+
+def pass_hat_k(successes: int, n: int, k: int) -> float:
+    """Unbiased estimate of pass^k (all of k independent trials succeed) from c successes in n trials.
+
+    τ-bench's estimator C(c, k) / C(n, k): reliability, not best-of-k. Needs 1 <= k <= n.
+    """
+    if not 1 <= k <= n or not 0 <= successes <= n:
+        raise ValueError(f"need 1 <= k <= n and 0 <= successes <= n, got c={successes}, n={n}, k={k}")
+    return math.comb(successes, k) / math.comb(n, k)
+
+
+def mcnemar_exact_p(only_a: int, only_b: int) -> float:
+    """Two-sided exact McNemar p-value from the discordant pairs of a paired comparison.
+
+    Pairs where both runs agree carry no information about which is better; under the null the
+    discordant ones split 50/50, so the test is a binomial test on them.
+    """
+    n = only_a + only_b
+    if n == 0:
+        return 1.0
+    k = min(only_a, only_b)
+    tail = sum(math.comb(n, i) for i in range(k + 1)) / 2**n
+    return min(1.0, 2 * tail)

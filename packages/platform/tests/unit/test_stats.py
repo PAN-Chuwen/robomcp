@@ -40,3 +40,21 @@ def test_interval_narrows_with_more_trials():
 def test_rejects_impossible_counts(k, n):
     with pytest.raises(ValueError):
         wilson_interval(k, n)
+
+
+def test_pass_hat_k_is_reliability_not_best_of_k():
+    from robomcp_platform.stats import pass_hat_k
+
+    assert pass_hat_k(4, 4, 4) == 1.0
+    assert pass_hat_k(3, 4, 1) == 0.75
+    assert pass_hat_k(3, 4, 4) == 0.0  # one failure in four trials: never four in a row
+    assert abs(pass_hat_k(3, 4, 2) - 0.5) < 1e-12  # C(3,2)/C(4,2) = 3/6
+
+
+def test_mcnemar_exact_p():
+    from robomcp_platform.stats import mcnemar_exact_p
+
+    assert mcnemar_exact_p(0, 0) == 1.0
+    assert mcnemar_exact_p(5, 5) == 1.0
+    assert abs(mcnemar_exact_p(0, 6) - 2 / 64) < 1e-12  # 6 discordant pairs all one way
+    assert mcnemar_exact_p(1, 4) > 0.05  # 5 discordant pairs cannot show a difference at 95%
