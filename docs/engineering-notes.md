@@ -132,6 +132,19 @@ sim worker 每个 episode 一个进程，环境通过 MCP 对外，外部 agent 
 - **还没做**：行级安全（RLS），因为它需要先定几件事：API 用的非 owner 数据库角色、worker 跨租户读取的权限、在知道 org 之前怎么查 API key；真正的 `HarnessRunner`；对象存储上传。都列在 `development.md` 里。
 - **证据**：`packages/platform/tests/integration/`，48 个测试跑在真实 Postgres 16 上，测试库每个会话新建、结束后删除；commits `61579a8`、`9c988c7`、`be7fef5`。
 
+### 12. 把环境和平台接起来：HarnessRunner
+
+- **动机**：M0 让环境变"诚实"，M1 搭好了队列和多租户，但 worker 还是个桩，接口建了实验也没有东西去跑。
+- **设计**：
+  - 环境层面的失败注入（slip）属于场景，放在 suite 的 task 里；模式、模型这些属于 agent，放在 agent_config 里。两者分开版本化，所以"换 agent，场景不变"的对比是干净的。
+  - 一个 task 的多次 repeat 共用同一个种子：场景相同，测出来的就只是模型自身的方差，正好是 pass^k 要的。
+  - 成功判定读 episode log 里的真值，不看 agent 怎么说；trace 和 episode log 按 `<org>/<project>/<experiment>/<episode>/attempt-<n>/` 存放，并保留原文件名，这样下载下来就能直接回放。
+- **难点和解法**：
+  - 测试不能依赖网络和 API key，又要覆盖真实的 harness、MCP 子进程和 MuJoCo。做法是 `ScriptedLLM`：按固定剧本返回 tool call，其他部分全是真的。它还能构造出"agent 声称成功、实际失败"的情况（种子 1，delayed slip），证明分数来自真值。
+  - MinIO 一直返回 400 "unsupported API call at '/'"：boto3 对自定义 endpoint 默认用 virtual-host 风格，把桶名放进了域名，改成 path 风格就好了。
+  - 第一次端到端运行时，worker 先跑了开发库里另一个组织残留的 4 个 episode：claim 是全局先进先出，一个租户的积压会饿死其他租户。已经记进待办：按组织轮转领取，并给每个组织设并发配额。
+- **证据**：端到端运行（真实 Gemini、Postgres、MinIO），红色方块 + delayed slip，种子 1、2：bare 1/2（Wilson [0.09, 0.91]），verify 2/2（[0.34, 1.00]）；从 MinIO 下载下来的产物回放 12/12 步复现。`tests/integration/test_harness_runner.py`（5 个测试）。
+
 ## 面试可能问到的
 
 - **为什么不让 LLM 直接控制关节？** 见第 1 条。分层（System 2 规划 + System 1 执行）也是业界主流（Gemini Robotics-ER + VLA、π0.5、GR00T N1）。

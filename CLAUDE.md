@@ -53,7 +53,9 @@ packages/
     │   ├── queue.py                # Postgres job queue: expand, claim (SKIP LOCKED), heartbeat, complete,
     │   │                           #   fail, reap stale heartbeats
     │   ├── results.py              # experiment aggregates (overall + per task)
-    │   ├── runner.py               # EpisodeSpec / EpisodeResult / EpisodeRunner protocol; HarnessRunner stub
+    │   ├── runner.py               # EpisodeSpec / EpisodeResult / EpisodeRunner; HarnessRunner runs the robomcp
+    │   │                           #   harness, scores from episode-log truth, uploads trace + episode log
+    │   ├── storage.py              # artifact store: S3/MinIO (path-style) or local directory
     │   ├── worker.py               # robomcp-worker loop (runner on main thread, heartbeat thread)
     │   ├── cli.py                  # robomcp-platform bootstrap | create-api-key
     │   └── api/                    # FastAPI: app.py (factory), deps.py (session, bearer auth),
@@ -61,7 +63,7 @@ packages/
     └── tests/
         ├── unit/                   # Wilson interval, key hashing (no DB)
         └── integration/            # throwaway DB per session; tenancy, queue, experiments, migrations;
-                                    #   fakes.py holds the test-only FakeRunner
+                                    #   fakes.py: FakeRunner, ScriptedLLM (drives the real harness offline)
 ```
 
 Runtime output goes to `out/` (gitignored): `out/traces/*.jsonl`, `out/eval-*.json`, `out/traces/*.env.jsonl`, `out/live/frame.jpg`, `out/replays/<trace>/`.
@@ -86,7 +88,7 @@ uv run pytest
 cp .env.example .env
 make dev                                                # compose up --wait, alembic upgrade head, API on :8000
 uv run --package robomcp-platform robomcp-platform bootstrap --org-name Acme --org-slug acme --email you@example.com
-make worker                                             # robomcp-worker (default runner is the HarnessRunner stub)
+make worker                                             # robomcp-worker: runs queued episodes with the harness (needs an LLM key)
 make test                                               # unit + integration (creates/drops robomcp_test_<random>)
 ```
 
