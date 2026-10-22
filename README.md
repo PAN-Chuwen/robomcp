@@ -31,19 +31,21 @@ sim.py      skills (pick / place) → inverse kinematics (mink) → MuJoCo physi
 
 ## Results
 
-Gemini Flash, 5 tasks × 2 seeds = 10 runs per mode, 2026-10-20. Tokens and seconds are averages per task.
+Gemini Flash, 5 tasks × 2 seeds = 10 runs per mode. Tokens and seconds are averages per task.
 
 | Environment | bare | verify | plan |
 |---|---|---|---|
-| Ideal (no failures) | 10/10 · 7.3k tok · 10 s | 10/10 · 8.1k · 16 s | 10/10 · 8.0k · 16 s |
+| Ideal (no failures) | 10/10 · 7.5k tok · 10 s | 10/10 · 8.5k · 15 s | 10/10 · 8.1k · 15 s |
 | Delayed silent failure (p = 0.5), verifier v1 | 5/10 | 7/10 | 8/10 |
-| Delayed silent failure (p = 0.5), verifier v2 | **6/10** · 9.0k · 14 s | **10/10** · 34.2k · 40 s | **10/10** · 33.3k · 37 s |
+| Delayed silent failure (p = 0.5), verifier v2 | **5/10** · 9.5k · 13 s | **10/10** · 33.9k · 32 s | **10/10** · 48.6k · 43 s |
+
+Verifier v1 row: 2026-10-20. Other rows: 2026-10-22, after cubes were given collisions and tray slots (on 10-20, before that change, verifier v2 scored bare 6/10, verify 10/10, plan 10/10).
 
 What the numbers say:
 
 1. In the ideal environment every mode succeeds; extra harness layers only cost time.
 2. When a failure is visible in the tool result, even `bare` recovers by itself: accurate observations let the executor verify its own work.
-3. When the tool result is stale, `bare` trusts the reported success and fails; the verifier re-reads the scene and catches it, at about 3.8× the tokens.
+3. When the tool result is stale, `bare` trusts the reported success and fails; the verifier re-reads the scene and catches it, at about 3.5–5× the tokens.
 4. Verifier v1 only saw the scene *after* execution. For "put the cube farthest from the tray into the tray" it re-picked the "farthest" cube among the remaining ones and rejected correct work; it also failed a correct refusal on the trap task. v2 gets the scene before and after. A wrong verifier is worse than none, because it overturns correct results.
 
 Small sample, one model, synthetic failures: treat these as a direction, not a benchmark.
