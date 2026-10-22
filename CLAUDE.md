@@ -13,12 +13,16 @@ robomcp/
 │   ├── loop_before_function_calling.py   # agent loop with regex-parsed text actions (offline demo)
 │   └── loop_with_function_calling.py     # same loop with structured tool calls
 ├── docs/                           # platform-plan.md, development.md
+├── scripts/probe_*.py              # measured mechanisms: grasp tolerance, camera, gripper signal
 ├── tests/
-│   └── test_replay.py              # replay reproduces scripted runs, flags the first divergent step
+│   ├── test_replay.py              # replay reproduces scripted runs, flags the first divergent step
+│   ├── test_safety.py              # gate blocks unsafe coordinates before anything moves
+│   └── test_sim.py                 # grasp success from proprioception
 └── src/robomcp/
     ├── sim.py                      # TabletopSim: scene state, mink IK, pick/place skills, rendering,
     │                               #   live frames, real-time pacing, failure injection (slip)
     ├── server.py                   # MCP server (MCPServer, stdio): 11 async tools
+    ├── safety.py                   # deterministic gate on move_to / place_at coordinates
     ├── model/                      # SO-101 MJCF + STL meshes (MuJoCo Menagerie, Apache-2.0) + scene.xml
     └── agent/
         ├── llm.py                  # OpenAI-compatible client (DeepSeek / Gemini), token + cache accounting

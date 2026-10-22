@@ -8,6 +8,7 @@ from pathlib import Path
 from mcp.server.mcpserver import Image, MCPServer
 from PIL import Image as PILImage
 
+from robomcp import safety
 from robomcp.sim import SkillError, TabletopSim
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "out"
@@ -28,6 +29,15 @@ sim = TabletopSim()
 
 def _result(ok: bool, message: str) -> dict:
     return {"ok": ok, "message": message, "scene": sim.scene()}
+
+
+def _gated(tool: str, args: dict, fn, *fn_args) -> dict:
+    """Run a command with free coordinates only if the safety gate allows it."""
+    reason = safety.check(tool, args)
+    if reason:
+        sim.settle_pending()
+        return {**_result(False, f"blocked by safety gate: {reason}"), "blocked": True}
+    return _run(fn, *fn_args)
 
 
 def _run(fn, *args) -> dict:
@@ -68,13 +78,13 @@ async def place_in_tray() -> dict:
 @server.tool()
 async def place_at(x: float, y: float) -> dict:
     """Put the held object down on the table at (x, y) and release it."""
-    return _run(sim.place, x, y)
+    return _gated("place_at", {"x": x, "y": y}, sim.place, x, y)
 
 
 @server.tool()
 async def move_to(x: float, y: float, z: float) -> dict:
     """Move the gripper tip to (x, y, z), pointing straight down."""
-    return _run(sim.move_to, x, y, z)
+    return _gated("move_to", {"x": x, "y": y, "z": z}, sim.move_to, x, y, z)
 
 
 @server.tool()
