@@ -18,9 +18,16 @@ MODEL_DIR = Path(__file__).parent / "model"
 ARM_JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
 GRIPPER_OPEN = 1.2
 GRIPPER_CLOSED = -0.17
+GRIPPER_RELEASE = 0.3  # partial opening used to let go of a placed object
 HOME_Q = np.array([0.0, -1.2, 1.1, 1.3, 0.0])
 APPROACH_HEIGHT = 0.07  # hover height above a target before descending
 TRAY_NAME = "tray"
+# Placement slots inside the 8 x 8 cm tray (offsets from its centre), diagonal pairs first so the
+# open gripper does not brush a neighbouring cube.
+# Gripper height when releasing onto the table / into the tray (floor 4 mm up); higher drops make cubes tumble.
+TABLE_RELEASE_Z = 0.015
+TRAY_RELEASE_Z = 0.019
+TRAY_SLOTS = [(0.018, 0.018), (-0.018, -0.018), (0.018, -0.018), (-0.018, 0.018)]
 
 
 @dataclass
@@ -201,8 +208,8 @@ class TabletopSim:
     def move_to(self, x: float, y: float, z: float, duration: float = 1.0) -> None:
         self._move_joints(self.solve_ik([x, y, z]), duration)
 
-    def set_gripper(self, open_: bool) -> None:
-        self.data.ctrl[5] = GRIPPER_OPEN if open_ else GRIPPER_CLOSED
+    def set_gripper(self, open_: bool, opening: float = GRIPPER_OPEN) -> None:
+        self.data.ctrl[5] = opening if open_ else GRIPPER_CLOSED
         self._settle(120)
 
     def go_home(self) -> None:
@@ -225,11 +232,18 @@ class TabletopSim:
         self.move_to(x, y, z + APPROACH_HEIGHT, duration=0.8)
         return self.held_object() == name
 
-    def place(self, x: float, y: float) -> None:
+    def place(self, x: float, y: float, release_z: float = TABLE_RELEASE_Z) -> None:
         held = self.held_object()
         self.move_to(x, y, 0.012 + APPROACH_HEIGHT)
-        self.move_to(x, y, 0.035, duration=0.8)
-        self.set_gripper(True)
+        if held:
+            # Aim the object, not the tip: the cube sits off-centre in the grip, and the offset turns
+            # with the wrist (5-DOF: yaw follows the base pan), so measure it here above the target.
+            off = self.data.xpos[self.model.body(held).id][:2] - self.tip_position()[:2]
+            x, y = x - float(off[0]), y - float(off[1])
+            self.move_to(x, y, 0.012 + APPROACH_HEIGHT, duration=0.4)
+        self.move_to(x, y, release_z, duration=0.8)
+        # Open just enough to let go: a full swing of the moving jaw knocks over neighbouring cubes.
+        self.set_gripper(True, opening=GRIPPER_RELEASE)
         self.move_to(x, y, 0.012 + APPROACH_HEIGHT, duration=0.6)
         if held is None:
             raise SkillError("place executed with an empty gripper")
@@ -249,14 +263,29 @@ class TabletopSim:
         """Silent failure: move the just-placed object off the tray; the caller is not told."""
         tray = self.data.xpos[self.model.body(TRAY_NAME).id]
         adr = self.model.joint(self.model.body(name).jntadr[0]).qposadr[0]
-        self.data.qpos[adr : adr + 7] = [tray[0] + 0.07, tray[1] - 0.02, 0.012, 1, 0, 0, 0]
+        others = [self.object_state(n).position for n in self.objects if n != name]
+        y = tray[1] - 0.02
+        while any(np.hypot(tray[0] + 0.07 - p[0], y - p[1]) < 0.03 for p in others):
+            y -= 0.035
+        self.data.qpos[adr : adr + 7] = [tray[0] + 0.07, y, 0.012, 1, 0, 0, 0]
         self.data.qvel[self.model.joint(self.model.body(name).jntadr[0]).dofadr[0] : ][:6] = 0
         mujoco.mj_forward(self.model, self.data)
         self._settle(60)
 
     def place_in_tray(self) -> None:
+        """Place the held object in the free tray slot farthest from the cubes already there.
+
+        Cubes collide, so each needs its own spot; earlier cubes drift a few mm, hence "farthest".
+        """
         tray = self.data.xpos[self.model.body(TRAY_NAME).id]
-        self.place(float(tray[0]), float(tray[1]))
+        held = self.held_object()
+        taken = [self.object_state(n).position for n in self.objects if n != held and self.object_state(n).in_tray]
+        slots = [(float(tray[0] + dx), float(tray[1] + dy)) for dx, dy in TRAY_SLOTS]
+        clearance = [min((np.hypot(x - p[0], y - p[1]) for p in taken), default=1.0) for x, y in slots]
+        best = int(np.argmax(clearance))
+        if clearance[best] < 0.03:
+            raise SkillError("tray is full")
+        self.place(*slots[best], release_z=TRAY_RELEASE_Z)
 
     # ---------------------------------------------------------------- render
 
