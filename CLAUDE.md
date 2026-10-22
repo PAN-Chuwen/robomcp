@@ -6,10 +6,11 @@ SO-101 robot arm in a MuJoCo tabletop scene, exposed to LLM agents as MCP tools,
 
 ```
 robomcp/
-├── pyproject.toml / uv.lock        # uv workspace root (members: packages/*); entry points robomcp-server, robomcp-agent
+├── pyproject.toml / uv.lock        # uv workspace root (members: packages/*, except web); entry points robomcp-server,
+│                                   #   robomcp-agent
 ├── docker-compose.yml              # dev services: Postgres 16 (host :5442), MinIO (host :9010, console :9011)
 ├── .env.example                    # copy to .env: compose credentials, ROBOMCP_DATABASE_URL, queue timings
-├── Makefile                        # make dev | services | migrate | api | worker | test | test-unit | down
+├── Makefile                        # make dev | services | migrate | api | worker | web | test | test-unit | down
 ├── typings/mujoco/                 # stubgen-generated stubs for MuJoCo's compiled bindings (pyright);
 │                                   #   regenerate command in typings/mujoco/__init__.pyi
 ├── examples/
@@ -38,32 +39,47 @@ robomcp/
         ├── console.py              # web console server (MJPEG stream, events, POST /run)
         └── console.html            # console page
 packages/
-└── platform/                       # robomcp-platform: SaaS backend (M1 skeleton)
-    ├── pyproject.toml              # entry points robomcp-platform (admin CLI), robomcp-worker
-    ├── alembic.ini                 # migrations; file names YYYYMMDD_HHMMSS_slug
-    ├── src/robomcp_platform/
-    │   ├── config.py               # Settings (pydantic-settings, ROBOMCP_* env / .env)
-    │   ├── db.py                   # engine + sessionmaker factories
-    │   ├── models.py               # tenant tables; composite (org_id, id) FKs; status enums as CHECKs
-    │   ├── migrations/             # Alembic env + versions/ (initial schema + immutability trigger)
-    │   ├── security.py             # API keys: rmcp_ + 256-bit secret, stored as SHA-256 + display prefix
-    │   ├── hashing.py              # canonical-JSON content hashes for suite / agent versions
-    │   ├── stats.py                # Wilson score interval
-    │   ├── tenancy.py              # create org + owner + key, issue keys
-    │   ├── queue.py                # Postgres job queue: expand, claim (SKIP LOCKED), heartbeat, complete,
-    │   │                           #   fail, reap stale heartbeats
-    │   ├── results.py              # experiment aggregates (overall + per task)
-    │   ├── runner.py               # EpisodeSpec / EpisodeResult / EpisodeRunner; HarnessRunner runs the robomcp
-    │   │                           #   harness, scores from episode-log truth, uploads trace + episode log
-    │   ├── storage.py              # artifact store: S3/MinIO (path-style) or local directory
-    │   ├── worker.py               # robomcp-worker loop (runner on main thread, heartbeat thread)
-    │   ├── cli.py                  # robomcp-platform bootstrap | create-api-key
-    │   └── api/                    # FastAPI: app.py (factory), deps.py (session, bearer auth),
-    │                               #   schemas.py, routes.py (/v1)
-    └── tests/
-        ├── unit/                   # Wilson interval, key hashing (no DB)
-        └── integration/            # throwaway DB per session; tenancy, queue, experiments, migrations;
-                                    #   fakes.py: FakeRunner, ScriptedLLM (drives the real harness offline)
+├── platform/                       # robomcp-platform: SaaS backend (M1 skeleton)
+│   ├── pyproject.toml              # entry points robomcp-platform (admin CLI), robomcp-worker
+│   ├── alembic.ini                 # migrations; file names YYYYMMDD_HHMMSS_slug
+│   ├── src/robomcp_platform/
+│   │   ├── config.py               # Settings (pydantic-settings, ROBOMCP_* env / .env)
+│   │   ├── db.py                   # engine + sessionmaker factories
+│   │   ├── models.py               # tenant tables; composite (org_id, id) FKs; status enums as CHECKs
+│   │   ├── migrations/             # Alembic env + versions/ (initial schema + immutability trigger)
+│   │   ├── security.py             # API keys: rmcp_ + 256-bit secret, stored as SHA-256 + display prefix
+│   │   ├── hashing.py              # canonical-JSON content hashes for suite / agent versions
+│   │   ├── stats.py                # Wilson score interval
+│   │   ├── tenancy.py              # create org + owner + key, issue keys
+│   │   ├── queue.py                # Postgres job queue: expand, claim (SKIP LOCKED), heartbeat, complete,
+│   │   │                           #   fail, reap stale heartbeats
+│   │   ├── results.py              # experiment aggregates (overall + per task)
+│   │   ├── runner.py               # EpisodeSpec / EpisodeResult / EpisodeRunner; HarnessRunner runs the robomcp
+│   │   │                           #   harness, scores from episode-log truth, uploads trace + episode log
+│   │   ├── storage.py              # artifact store: S3/MinIO (path-style) or local directory
+│   │   ├── worker.py               # robomcp-worker loop (runner on main thread, heartbeat thread)
+│   │   ├── cli.py                  # robomcp-platform bootstrap | create-api-key
+│   │   └── api/                    # FastAPI: app.py (factory), deps.py (session, bearer auth),
+│   │                               #   schemas.py, routes.py (/v1)
+│   └── tests/
+│       ├── unit/                   # Wilson interval, key hashing (no DB)
+│       └── integration/            # throwaway DB per session; tenancy, queue, experiments, migrations;
+│                                   #   fakes.py: FakeRunner, ScriptedLLM (drives the real harness offline)
+└── web/                            # robomcp-web: Next.js 16 (App Router) + TypeScript + Tailwind 4; BFF over the API
+    ├── AGENTS.md                   # Next.js 16 agent rules (written by `next dev`; read node_modules/next/dist/docs)
+    ├── scripts/gen-api.sh          # npm run gen:api: OpenAPI from create_app() → src/lib/api/{openapi.json,schema.d.ts}
+    ├── scripts/screenshots.mjs     # npm run screenshots: sign in, capture pages at desktop / phone (playwright-core)
+    └── src/
+        ├── proxy.ts                # no session cookie → /sign-in?next=…
+        ├── app/                    # / (projects), projects/[projectId], experiments/[experimentId], compare,
+        │                           #   episodes/[episodeId] (replay), sign-in; auth/sign-in + auth/sign-out route handlers
+        ├── components/             # IntervalBar/Tally, TallyTable, ExperimentTable, AutoRefresh, Replay, SceneView, …
+        └── lib/
+            ├── api/                # schema.d.ts (generated), server.ts (openapi-fetch client, key from cookie, unwrap)
+            ├── run.ts              # parse trace v3 + episode log, join by step
+            ├── diff.ts             # observation vs truth per step (>1 mm, in_tray, holding, blocked)
+            ├── interval.ts, scene-geometry.ts, compare.ts, format.ts, labels.ts, auth-helpers.ts
+            └── *.test.ts, fixtures/  # vitest; fixtures are a real bare-mode run (trace + episode log)
 ```
 
 Runtime output goes to `out/` (gitignored): `out/traces/*.jsonl`, `out/eval-*.json`, `out/traces/*.env.jsonl`, `out/live/frame.jpg`, `out/replays/<trace>/`.
@@ -72,6 +88,7 @@ Runtime output goes to `out/` (gitignored): `out/traces/*.jsonl`, `out/eval-*.js
 
 Python 3.12 + uv · MuJoCo 3 · mink (IK) · MCP Python SDK v2 (`MCPServer`, `input_schema`) · openai SDK against OpenAI-compatible endpoints · Pillow.
 Platform: FastAPI · SQLAlchemy 2 + psycopg 3 · Alembic · pydantic-settings · Postgres 16 · MinIO (S3).
+Web: Next.js 16 (App Router, Cache Components off) · React 19 · TypeScript · Tailwind 4 · openapi-typescript + openapi-fetch · vitest.
 
 ## Quick start
 
@@ -90,6 +107,11 @@ make dev                                                # compose up --wait, ale
 uv run --package robomcp-platform robomcp-platform bootstrap --org-name Acme --org-slug acme --email you@example.com
 make worker                                             # robomcp-worker: runs queued episodes with the harness (needs an LLM key)
 make test                                               # unit + integration (creates/drops robomcp_test_<random>)
+
+# web app (packages/web; Node 22+); needs the API running
+make web                                                # npm install + next dev on :3000; sign in with an API key
+cd packages/web && npm test && npm run lint && npm run typecheck && npm run build
+npm run gen:api                                         # after changing API schemas: regenerate src/lib/api/schema.d.ts
 ```
 
 API key: `DEEPSEEK_API_KEY` or `GEMINI_API_KEY` in `.env` (gitignored); on macOS the Gemini key can also come from the Keychain service `gemini-api-key`. `LLM_PROVIDER` / `LLM_MODEL` override the defaults.
@@ -104,6 +126,10 @@ API key: `DEEPSEEK_API_KEY` or `GEMINI_API_KEY` in `.env` (gitignored); on macOS
   `POST /v1/projects/{id}/agent-versions` (201 / 200), `POST /v1/experiments` (expands tasks × seeds × repeats),
   `GET /v1/experiments/{id}` (status + successes / scored + Wilson 95%, per task),
   `GET /v1/experiments/{id}/episodes?status=&limit=&offset=`.
+- Web pages: `/` projects · `/projects/{id}` experiments (tick two → comparison) · `/experiments/{id}?status=&offset=`
+  tallies, pass^k, episodes · `/compare?baseline=&candidate=` · `/episodes/{id}#step-N` replay · `/sign-in`;
+  `POST /auth/sign-in` (validates the key with `GET /v1/me`, sets the cookie), `POST /auth/sign-out`.
+  Env: `ROBOMCP_API_URL` (server side only).
 - Platform env: `ROBOMCP_DATABASE_URL`, `ROBOMCP_TEST_DATABASE_URL` (test server), `ROBOMCP_HEARTBEAT_INTERVAL_S`,
   `ROBOMCP_HEARTBEAT_TIMEOUT_S`, `ROBOMCP_MAX_ATTEMPTS`, `ROBOMCP_WORKER_RUNNER` (`module:factory`).
 
@@ -122,13 +148,21 @@ API key: `DEEPSEEK_API_KEY` or `GEMINI_API_KEY` in `.env` (gitignored); on macOS
 - MCP SDK v2 exposes tool schemas as `input_schema` (not `inputSchema`).
 - `reset(seed)` seeds the failure-injection RNG; same seed + same actions reproduce the same failures (seed 1 slips on the first placement — used for demos).
 - When changing harness prompts or tools, rerun the eval in both the ideal and the delayed-failure setting and report the numbers as they are.
-- Commit style: conventional commits (`feat(robomcp): …`, `fix(robomcp): …`, `docs: …`; `feat(platform): …` for packages/platform).
+- Commit style: conventional commits (`feat(robomcp): …`, `fix(robomcp): …`, `docs: …`; `feat(platform): …` for packages/platform,
+  `feat(web): …` for packages/web).
 - Platform: every tenant query filters by the principal's `org_id`; foreign rows are 404, never 403. Child tables
   reference parents via composite `(org_id, parent_id)` FKs, so cross-org links fail in the database too.
 - Platform: queue functions never commit; run each in its own `sm.begin()` transaction. Lock episode rows before
   the experiment row. Worker writes are guarded by `claimed_by = me AND status = 'running'`.
 - Platform: episode status `succeeded`/`failed` = task check passed / not; `error` = no result after
   `max_attempts`. `error` is excluded from the scored n.
+- Web: the browser never calls the API. Server components and route handlers call `ROBOMCP_API_URL` (default
+  `http://localhost:8000`) with the key from the httpOnly `robomcp_key` cookie (`lib/api/server.ts`); keep it that way
+  (no client-side fetches, no `NEXT_PUBLIC_` API URL). Use `unwrap()` so 401 → sign-in and 404 → not-found.
+- Web: Next.js 16 differs from older versions (`proxy.ts` instead of middleware, async `params` / `searchParams`,
+  `PageProps<"/route">` helpers); read `packages/web/node_modules/next/dist/docs/` before changing framework code.
+  Pure logic lives in `src/lib` with vitest tests; components only render.
+- Web: when API schemas change, run `npm run gen:api` and commit `openapi.json` + `schema.d.ts` with the change.
 - Platform: schema changes go through `make migrate`-able Alembic revisions (`alembic -c packages/platform/alembic.ini
   revision --autogenerate -m …`); suite_versions / agent_versions are immutable (DB trigger).
 
