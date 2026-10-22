@@ -12,7 +12,7 @@ robomcp/
 ├── examples/
 │   ├── loop_before_function_calling.py   # agent loop with regex-parsed text actions (offline demo)
 │   └── loop_with_function_calling.py     # same loop with structured tool calls
-├── docs/                           # platform-plan.md, development.md
+├── docs/                           # platform-plan.md, development.md, engineering-notes.md
 ├── scripts/probe_*.py              # measured mechanisms: grasp tolerance, camera, gripper signal
 ├── tests/
 │   ├── test_replay.py              # replay reproduces scripted runs, flags the first divergent step
@@ -21,7 +21,8 @@ robomcp/
 └── src/robomcp/
     ├── sim.py                      # TabletopSim: scene state, mink IK, pick/place skills, rendering,
     │                               #   live frames, real-time pacing, failure injection (slip)
-    ├── server.py                   # MCP server (MCPServer, stdio): 11 async tools
+    ├── perception.py               # Perception seam: where object position estimates come from (oracle now)
+    ├── server.py                   # MCP server (MCPServer, stdio): 11 async tools; writes the episode log
     ├── safety.py                   # deterministic gate on move_to / place_at coordinates
     ├── model/                      # SO-101 MJCF + STL meshes (MuJoCo Menagerie, Apache-2.0) + scene.xml
     └── agent/
@@ -35,7 +36,7 @@ robomcp/
         └── console.html            # console page
 ```
 
-Runtime output goes to `out/` (gitignored): `out/traces/*.jsonl`, `out/eval-*.json`, `out/live/frame.jpg`, `out/replays/<trace>/`.
+Runtime output goes to `out/` (gitignored): `out/traces/*.jsonl`, `out/eval-*.json`, `out/traces/*.env.jsonl`, `out/live/frame.jpg`, `out/replays/<trace>/`.
 
 ## Tech stack
 
@@ -70,7 +71,8 @@ API key: `DEEPSEEK_API_KEY` or `GEMINI_API_KEY` in `.env` (gitignored); on macOS
 
 ## Notes for AI assistants
 
-- Traces are v2 (`trace_version` in the start event): every robot call is logged with its full result, harness-internal calls as `harness_call`. Any new robot call in the harness must go through `Harness._call`, or replays stop reproducing.
+- A run is a trace v3 (`<run>.jsonl`, agent side; each robot call carries its `step`) plus the environment's episode log (`<run>.env.jsonl`, observation + ground truth per call, written by the server when `ROBOMCP_EPISODE_LOG` is set). Every robot call in the harness must go through `Harness._call`, or step numbers stop matching.
+- Tools return observations (`sim.observe()`); ground truth (`sim.truth()`) is only for scoring, replay and failure injection. Skills aim at `perceived_state`, never `object_state`.
 - MuJoCo rendering must run on the main thread: keep MCP tools `async`. Sync tools run in worker threads and rendering hangs.
 - MCP SDK v2 exposes tool schemas as `input_schema` (not `inputSchema`).
 - `reset(seed)` seeds the failure-injection RNG; same seed + same actions reproduce the same failures (seed 1 slips on the first placement — used for demos).
@@ -82,3 +84,4 @@ API key: `DEEPSEEK_API_KEY` or `GEMINI_API_KEY` in `.env` (gitignored); on macOS
 - `README.md` — overview, results table, how to run
 - `docs/platform-plan.md` — SaaS platform plan, measured mechanisms, milestones
 - `docs/development.md` — active todos
+- `docs/engineering-notes.md` — motivation / difficulty / resolution per decision, architecture (interview prep); add an entry for every notable change
