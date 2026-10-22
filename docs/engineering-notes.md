@@ -168,6 +168,16 @@ sim worker 每个 episode 一个进程，环境通过 MCP 对外，外部 agent 
 - **解法**：建 suite 版本和 agent 版本时就校验，不合法直接返回 422：检查名必须是内置的，失败注入只允许 `slip ∈ [0, 1]` 和 `slip_mode ∈ {immediate, delayed}`，`mode` 只能是 bare / verify / plan。已有的队列测试用的是假任务名，我给它们补上了真实存在的检查，没有为了让测试通过而放宽校验。
 - **证据**：`api/schemas.py`；`tests/integration/test_experiments.py`。
 
+### 16. Web 界面（M2）：BFF、生成的类型，以及一个回放看不出来的失败
+
+- **动机**：实验、对比、回放要有界面才能用；面试时也需要能直接展示。
+- **设计**：
+  - **BFF（Backend for Frontend）**：浏览器只和 Next.js 通信；API key 放在 httpOnly、SameSite=Lax 的 cookie 里，所有 API 调用都在服务端发出。浏览器拿不到 key，也不用配 CORS。
+  - **类型来自后端**：用 `create_app().openapi()` 导出 OpenAPI，再用 openapi-typescript 生成 TS 类型。后端改了字段，前端在类型检查阶段就会报错。
+  - **回放不存视频**：真值场景画成俯视 SVG，每一步对比"agent 看到的"和"真值"，所以每个 episode 只需要存两份 JSONL；视频以后再做成按需渲染。
+- **发现**：逐步对比看不出 delayed 失败。episode log 记真值的那一刻，观测还是对的，方块是在那之后才弹出去的。所以失败归因（M4）不能只做"同一步的观测对真值"，要把 agent 最后一次观测当作它当时的认知，延续到后面的步骤，再和之后的真值比。这直接决定了归因算法怎么写。
+- **证据**：`packages/web/`，37 个 vitest 测试，lint、类型检查、构建都通过；用开发库里的真实数据截图核对过。
+
 ## 面试可能问到的
 
 - **为什么不让 LLM 直接控制关节？** 见第 1 条。分层（System 2 规划 + System 1 执行）也是业界主流（Gemini Robotics-ER + VLA、π0.5、GR00T N1）。
