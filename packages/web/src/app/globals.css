@@ -51,18 +51,21 @@
   --font-mono: var(--mono);
 }
 
-html,
-body {
-  background: var(--bg);
-  color: var(--fg);
-}
+/* In a layer, so Tailwind utilities (e.g. text-accent on a link) override these defaults. */
+@layer base {
+  html,
+  body {
+    background: var(--bg);
+    color: var(--fg);
+  }
 
-body {
-  font: 14px/1.55 var(--body);
-}
+  body {
+    font: 14px/1.55 var(--body);
+  }
 
-a {
-  color: inherit;
+  a {
+    color: inherit;
+  }
 }
 
 @layer components {
