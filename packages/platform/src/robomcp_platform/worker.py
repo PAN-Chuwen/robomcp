@@ -93,7 +93,7 @@ class Worker:
             self.reap()
             self._last_reap = now
         with self.sm.begin() as s:
-            spec = queue.claim_next(s, self.worker_id)
+            spec = queue.claim_next(s, self.worker_id, self.settings.max_running_per_org)
         if spec is None:
             return False
         self._run(spec)

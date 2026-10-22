@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     max_attempts: int = 3
     poll_interval_s: float = 1.0
     max_episodes_per_experiment: int = 10_000
+    max_running_per_org: int | None = None  # concurrent episodes per org across all workers; None = no cap
 
     # Dotted path "module:attr" to a zero-argument factory returning an EpisodeRunner.
     worker_runner: str = "robomcp_platform.runner:HarnessRunner"

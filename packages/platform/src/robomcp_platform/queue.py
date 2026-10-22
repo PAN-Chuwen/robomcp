@@ -44,13 +44,21 @@ def expand_episodes(session: Session, experiment: Experiment, task_keys: list[st
     return len(rows)
 
 
+# Fair share across orgs: take the oldest queued episode of the org with the fewest running episodes, so one
+# org's backlog cannot starve the others (a global FIFO did exactly that in the first end-to-end run). An org
+# at its concurrency cap is skipped. The cap is soft under concurrent claims: two workers can both see an org
+# at cap - 1 and both claim; a hard cap would need a per-org lock on every claim.
 _CLAIM_SQL = text(
     """
-    WITH next AS (
-        SELECT id FROM episodes
-        WHERE status = 'queued'
-        ORDER BY created_at, id
-        FOR UPDATE SKIP LOCKED
+    WITH running AS (
+        SELECT org_id, count(*) AS n FROM episodes WHERE status = 'running' GROUP BY org_id
+    ),
+    next AS (
+        SELECT e.id FROM episodes AS e
+        LEFT JOIN running AS r ON r.org_id = e.org_id
+        WHERE e.status = 'queued' AND (CAST(:cap AS integer) IS NULL OR coalesce(r.n, 0) < :cap)
+        ORDER BY coalesce(r.n, 0), e.created_at, e.id
+        FOR UPDATE OF e SKIP LOCKED
         LIMIT 1
     )
     UPDATE episodes AS e
@@ -63,9 +71,9 @@ _CLAIM_SQL = text(
 )
 
 
-def claim_next(session: Session, worker_id: str) -> EpisodeSpec | None:
-    """Claim the oldest queued episode for `worker_id`, or return None if the queue is empty."""
-    row = session.execute(_CLAIM_SQL, {"worker": worker_id}).one_or_none()
+def claim_next(session: Session, worker_id: str, max_running_per_org: int | None = None) -> EpisodeSpec | None:
+    """Claim the next queued episode for `worker_id` (fair share across orgs), or None if nothing is claimable."""
+    row = session.execute(_CLAIM_SQL, {"worker": worker_id, "cap": max_running_per_org}).one_or_none()
     if row is None:
         return None
     episode_id, experiment_id = row
