@@ -107,3 +107,31 @@ def test_worker_runs_experiment_to_completion_with_wilson_summary(make_org, sm, 
     episodes = org.ok("GET", f"/v1/experiments/{exp['id']}/episodes?limit=100")["items"]
     assert all(e["claimed_by"] == "w1" and e["trace_uri"] and e["metrics"]["steps"] == 3 for e in episodes)
     assert all(e["status"] == ("succeeded" if e["success"] else "failed") for e in episodes)
+
+
+@pytest.mark.parametrize("task", [
+    {"key": "fold_towel"},  # no built-in check with that name
+    {"key": "red", "check": "nope"},
+    {"key": "red", "perturbations": {"slip": 1.5}},
+    {"key": "red", "perturbations": {"slip_mode": "sometimes"}},
+    {"key": "red", "perturbations": {"gravity": 0}},
+])
+def test_rejects_suite_tasks_the_runner_cannot_run(make_org, task):
+    org = make_org()
+    proj = org.ok("POST", "/v1/projects", {"name": "p"}, 201)
+    assert org.post(f"/v1/projects/{proj['id']}/suites/main/versions", {"tasks": [task]}).status_code == 422
+
+
+def test_accepts_a_task_with_a_renamed_check_and_perturbations(make_org):
+    org = make_org()
+    proj = org.ok("POST", "/v1/projects", {"name": "p"}, 201)
+    task = {"key": "red_slippery", "check": "red", "perturbations": {"slip": 0.5, "slip_mode": "delayed"}}
+    v = org.ok("POST", f"/v1/projects/{proj['id']}/suites/main/versions", {"tasks": [task]}, 201)
+    assert v["tasks"] == [task]
+
+
+@pytest.mark.parametrize("config", [{"mode": "yolo"}, {"max_turns": 0}, {"max_verify": "2"}])
+def test_rejects_agent_configs_the_harness_cannot_run(make_org, config):
+    org = make_org()
+    proj = org.ok("POST", "/v1/projects", {"name": "p"}, 201)
+    assert org.post(f"/v1/projects/{proj['id']}/agent-versions", {"name": "a", "config": config}).status_code == 422

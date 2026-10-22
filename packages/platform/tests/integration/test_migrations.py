@@ -29,7 +29,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
 @pytest.mark.parametrize("table", ["suite_versions", "agent_versions"])
 def test_versions_are_immutable(make_org, engine, table):
     org = make_org()
-    org.experiment([{"key": "t"}], seeds=[1])
+    org.experiment([{"key": "t", "check": "red"}], seeds=[1])
     column = "tasks" if table == "suite_versions" else "config"
     with pytest.raises(DBAPIError, match="immutable"), engine.begin() as conn:
         conn.execute(text(f"UPDATE {table} SET {column} = '{{}}'::jsonb"))

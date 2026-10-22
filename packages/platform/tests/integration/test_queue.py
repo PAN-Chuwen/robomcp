@@ -12,7 +12,7 @@ from robomcp_platform.models import Episode, Experiment
 from robomcp_platform.runner import EpisodeResult
 from robomcp_platform.worker import Worker
 
-ONE_TASK = [{"key": "t"}]
+ONE_TASK = [{"key": "t", "check": "red"}]
 
 
 def _episode(sm, episode_id) -> Episode:
@@ -43,7 +43,7 @@ def _reap(sm, max_attempts=3, timeout=30.0):
 
 def test_concurrent_claims_never_hand_out_the_same_episode(make_org, sm):
     org = make_org()
-    org.experiment([{"key": f"t{i}"} for i in range(10)], seeds=list(range(20)))  # 200 episodes
+    org.experiment([{"key": f"t{i}", "check": "red"} for i in range(10)], seeds=list(range(20)))  # 200 episodes
     n_workers, start = 12, threading.Barrier(12)
     claims: dict[str, list[uuid.UUID]] = {f"w{i}": [] for i in range(n_workers)}
     errors: list[BaseException] = []
