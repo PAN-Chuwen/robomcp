@@ -207,9 +207,8 @@ def test_load_runner_rejects_bad_paths(bad):
         load_runner(bad)
 
 
-def test_default_runner_is_the_unimplemented_harness_stub(settings):
+def test_default_runner_is_the_harness_runner(settings):
+    from robomcp_platform.runner import HarnessRunner
     from robomcp_platform.worker import load_runner
 
-    runner = load_runner(settings.worker_runner)
-    with pytest.raises(NotImplementedError):
-        runner.run(None)  # type: ignore[arg-type]
+    assert isinstance(load_runner(settings.worker_runner), HarnessRunner)

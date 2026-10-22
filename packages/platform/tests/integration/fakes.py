@@ -39,3 +39,35 @@ class RaisingRunner:
     def run(self, spec: EpisodeSpec) -> EpisodeResult:
         self.calls += 1
         raise self.exc
+
+
+class ScriptedLLM:
+    """Stands in for the model in bare mode: a fixed sequence of tool calls, then a final message.
+
+    Lets tests drive the real harness, MCP server and simulator end to end without a network or API key.
+    """
+
+    def __init__(self, calls: list[tuple[str, dict]], final: str = "完成"):
+        from robomcp.agent.llm import Usage
+
+        self.model, self.usage = "scripted", Usage()
+        self.calls, self.final = calls, final
+
+    def chat(self, messages: list[dict], tools: list[dict] | None = None):
+        import json
+
+        from openai.types.chat import ChatCompletionMessage
+        from openai.types.chat.chat_completion_message_function_tool_call import (
+            ChatCompletionMessageFunctionToolCall, Function)
+
+        i = self.usage.calls
+        self.usage.calls += 1
+        if i >= len(self.calls):
+            return ChatCompletionMessage(role="assistant", content=self.final)
+        name, args = self.calls[i]
+        call = ChatCompletionMessageFunctionToolCall(id=f"call_{i}", type="function",
+                                                    function=Function(name=name, arguments=json.dumps(args)))
+        return ChatCompletionMessage(role="assistant", content=None, tool_calls=[call])
+
+
+PUT_RED_IN_TRAY = [("get_scene", {}), ("pick", {"object_name": "red_cube"}), ("place_in_tray", {})]
