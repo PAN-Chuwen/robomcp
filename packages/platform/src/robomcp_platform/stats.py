@@ -22,4 +22,7 @@ def wilson_interval(successes: int, n: int, z: float = Z_95) -> tuple[float, flo
     denom = 1 + z2 / n
     centre = (p + z2 / (2 * n)) / denom
     half = z * math.sqrt(p * (1 - p) / n + z2 / (4 * n * n)) / denom
-    return max(0.0, centre - half), min(1.0, centre + half)
+    # The bounds are exactly 0 at k = 0 and exactly 1 at k = n; avoid float cancellation residue there.
+    lo = 0.0 if successes == 0 else max(0.0, centre - half)
+    hi = 1.0 if successes == n else min(1.0, centre + half)
+    return lo, hi
