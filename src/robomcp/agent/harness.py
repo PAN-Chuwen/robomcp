@@ -15,12 +15,16 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import mujoco
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 
 from robomcp.agent.llm import LLM, PROJECT_ROOT, Usage, mcp_to_openai_tools
 
 TRACE_DIR = PROJECT_ROOT / "out" / "traces"
+# v2: every robot call is logged with its full result (executor calls as "tool", the harness's own as
+# "harness_call"), so a run can be replayed in the simulator and checked step by step (robomcp.replay).
+TRACE_VERSION = 2
 HIDDEN_TOOLS = {"look", "start_recording", "save_recording", "reset_scene"}  # harness-only or not text-model friendly
 
 EXECUTOR_PROMPT = """你控制一台桌面机械臂（MuJoCo 仿真）。坐标单位是米：+x 向前，+y 向左，z 向上，桌面 z=0。
@@ -133,6 +137,20 @@ class Harness:
 
     # ----------------------------------------------------------------- the loop
 
+    async def _call(self, robot: Client, res: RunResult, name: str, args: dict, by: str = "harness") -> str:
+        """Call a robot tool and log it with the full result; `by` is "executor" or "harness"."""
+        out = _text(await robot.call_tool(name, args))
+        try:
+            result = json.loads(out)
+        except json.JSONDecodeError:
+            result = out
+        if by == "executor":
+            self._log(res, "tool", name=name, args=args, summary=self._summary(out), result=result)
+        else:
+            res.events.append({"t": round(time.time(), 3), "kind": "harness_call", "name": name, "args": args,
+                               "result": result})
+        return out
+
     async def _executor(self, robot: Client, tools: list[dict], messages: list[dict], res: RunResult) -> str:
         for _ in range(self.max_turns):
             msg = self.llm.chat(messages, tools)
@@ -142,9 +160,8 @@ class Harness:
                 return msg.content or ""
             for call in msg.tool_calls:
                 args = json.loads(call.function.arguments or "{}")
-                out = _text(await robot.call_tool(call.function.name, args))
+                out = await self._call(robot, res, call.function.name, args, by="executor")
                 res.tool_calls += 1
-                self._log(res, "tool", name=call.function.name, args=args, summary=self._summary(out))
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": out})
         return "（达到最大轮数，停止）"
 
@@ -153,20 +170,21 @@ class Harness:
         self.llm.usage = Usage()
         t0 = time.time()
         self._log(res, "start", goal=goal, mode=self.mode, seed=seed, slip=self.slip,
-                  slip_mode=self.slip_mode)
+                  slip_mode=self.slip_mode, trace_version=TRACE_VERSION, mujoco=mujoco.__version__,
+                  model=self.llm.model)
         async with Client(_server_params(self.live, self.slip, self.slip_mode)) as robot:
             tools = mcp_to_openai_tools((await robot.list_tools()).tools, HIDDEN_TOOLS)
-            await robot.call_tool("reset_scene", {"seed": seed} if seed is not None else {})
+            await self._call(robot, res, "reset_scene", {"seed": seed} if seed is not None else {})
             if record:
-                await robot.call_tool("start_recording", {})
-            scene = _text(await robot.call_tool("get_scene", {}))
+                await self._call(robot, res, "start_recording", {})
+            scene = await self._call(robot, res, "get_scene", {})
             res.scene_before = json.loads(scene)
 
             await self._solve(robot, tools, goal, scene, res)
 
-            res.scene_after = json.loads(_text(await robot.call_tool("get_scene", {})))
+            res.scene_after = json.loads(await self._call(robot, res, "get_scene", {}))
             if record:
-                saved = _text(await robot.call_tool("save_recording", {"filename": record}))
+                saved = await self._call(robot, res, "save_recording", {"filename": record})
                 self._log(res, "recording", info=saved)
         return self._finish(res, t0)
 
@@ -186,7 +204,7 @@ class Harness:
 
         if self.mode in ("verify", "plan"):
             for _ in range(self.max_verify):
-                after = _text(await robot.call_tool("get_scene", {}))
+                after = await self._call(robot, res, "get_scene", {})
                 verdict = self._verify(goal, scene, after, res.final_text)
                 res.verifier_rounds += 1
                 self._log(res, "verify", verdict=verdict)
