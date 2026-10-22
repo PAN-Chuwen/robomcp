@@ -12,11 +12,12 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://robomcp@localhost:5442/robomcp"
 
-    # Object storage for frames / traces (MinIO in dev). Not used by M1 code yet.
+    # Object storage for episode artifacts (MinIO in dev); without an endpoint, artifacts go to artifact_dir.
     s3_endpoint_url: str | None = None
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
     s3_bucket: str = "robomcp"
+    artifact_dir: str = "out/artifacts"
 
     # Job queue
     heartbeat_interval_s: float = 5.0
